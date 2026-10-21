@@ -17,6 +17,8 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
   CheckIcon,
   GitBranchIcon,
   PlayIcon,
@@ -63,6 +65,8 @@ type AvailableModel = {
 };
 type WorkspaceChoice = "root" | "worktree";
 const EMPTY_PROJECT_IDS: ReadonlyArray<ProjectId> = [];
+const needsAcknowledgement = (task: RepositoryTask) =>
+  task.state === "uncertain" || task.members.some((member) => member.launchState === "uncertain");
 const scopedModelKey = (environmentId: EnvironmentId | null, modelKey: string) =>
   `${environmentId ?? ""}:${modelKey}`;
 const optionKey = (
@@ -325,6 +329,7 @@ export function RepositoryTasksPage({
   const [selectedRoles, setSelectedRoles] = useState<Role[]>(["implementation"]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // This filtered list is intentionally stable because it drives member form state.
   // eslint-disable-next-line t3code/no-manual-memo -- keep effect inputs referentially stable
@@ -342,7 +347,7 @@ export function RepositoryTasksPage({
       : null;
   const tasksAtom =
     capability && environmentId
-      ? repositoryTaskEnvironment.tasks({ environmentId, input: {} })
+      ? repositoryTaskEnvironment.tasks({ environmentId, input: { archived: showArchived } })
       : null;
   const detailAtom =
     capability && environmentId && taskId
@@ -383,6 +388,15 @@ export function RepositoryTasksPage({
   });
   const createTask = useAtomCommand(repositoryTaskEnvironment.createTask, { reportFailure: false });
   const stopTask = useAtomCommand(repositoryTaskEnvironment.stopTask, { reportFailure: false });
+  const acknowledgeTask = useAtomCommand(repositoryTaskEnvironment.acknowledgeTask, {
+    reportFailure: false,
+  });
+  const archiveTask = useAtomCommand(repositoryTaskEnvironment.archiveTask, {
+    reportFailure: false,
+  });
+  const unarchiveTask = useAtomCommand(repositoryTaskEnvironment.unarchiveTask, {
+    reportFailure: false,
+  });
   const selectedModel = models.find((model) => model.key === selectedModelKey)?.selection;
   const selectedModelDetails = currentModelsByKey.get(selectedModelKey);
   const coordinatorOptionsKey = optionKey(environmentId, "coordinator", selectedModelKey);
@@ -551,12 +565,12 @@ export function RepositoryTasksPage({
       setBusy(false);
     }
   }
-  async function stopSelectedTask() {
+  async function runSelectedTaskCommand(command: typeof stopTask) {
     if (!environmentId || !taskId || !canOperate) return;
     setBusy(true);
     setError("");
     try {
-      const result = await stopTask({ environmentId, input: { taskId } });
+      const result = await command({ environmentId, input: { taskId } });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       detailQuery.refresh();
       tasksQuery.refresh();
@@ -676,7 +690,7 @@ export function RepositoryTasksPage({
               <legend className="mb-2 text-sm font-medium">Projects (choose at least two)</legend>
               {envProjects.length ? (
                 envProjects.map((project) => (
-                  <label key={project.id} className="flex items-center gap-2 text-sm">
+                  <label key={project.id} className="flex min-w-0 items-center gap-2 text-sm">
                     <Checkbox
                       checked={groupProjectIds.includes(project.id)}
                       onCheckedChange={(checked) =>
@@ -688,7 +702,7 @@ export function RepositoryTasksPage({
                       }
                     />
                     <span className="min-w-0 truncate">{project.title}</span>
-                    <span className="truncate text-xs text-muted-foreground">
+                    <span className="min-w-0 truncate text-xs text-muted-foreground">
                       {project.workspaceRoot}
                     </span>
                   </label>
@@ -931,15 +945,26 @@ export function RepositoryTasksPage({
                   Reopen a task to see current participant state.
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={tasksQuery.refresh}
-                disabled={tasksQuery.isPending}
-              >
-                <RefreshCwIcon />
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={showArchived ? "secondary" : "ghost"}
+                  size="sm"
+                  aria-pressed={showArchived}
+                  onClick={() => setShowArchived((current) => !current)}
+                >
+                  <ArchiveIcon />
+                  Archived
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={tasksQuery.refresh}
+                  disabled={tasksQuery.isPending}
+                >
+                  <RefreshCwIcon />
+                  Refresh
+                </Button>
+              </div>
             </div>
             {tasksQuery.isPending && !tasks.length ? (
               <p role="status" className="text-sm text-muted-foreground">
@@ -967,7 +992,11 @@ export function RepositoryTasksPage({
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">No repository tasks on this host yet.</p>
+              <p className="text-sm text-muted-foreground">
+                {showArchived
+                  ? "No archived repository tasks on this host."
+                  : "No repository tasks on this host yet."}
+              </p>
             )}
           </section>
           {taskId ? (
@@ -986,15 +1015,52 @@ export function RepositoryTasksPage({
                       : "Loading saved task state"}
                   </p>
                 </div>
-                <Button
-                  variant="destructive"
-                  onClick={() => void stopSelectedTask()}
-                  disabled={!canOperate || busy || !task || task.state !== "active"}
-                >
-                  <SquareIcon />
-                  Stop task
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {task && needsAcknowledgement(task) ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => void runSelectedTaskCommand(acknowledgeTask)}
+                      disabled={!canOperate || busy}
+                    >
+                      <CheckIcon />
+                      Acknowledge observed state
+                    </Button>
+                  ) : null}
+                  {task && (task.state === "finished" || task.state === "stopped") ? (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        void runSelectedTaskCommand(task.archivedAt ? unarchiveTask : archiveTask)
+                      }
+                      disabled={!canOperate || busy}
+                    >
+                      {task.archivedAt ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
+                      {task.archivedAt ? "Unarchive" : "Archive"}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="destructive"
+                      onClick={() => void runSelectedTaskCommand(stopTask)}
+                      disabled={
+                        !canOperate ||
+                        busy ||
+                        !task ||
+                        (task.state !== "active" && task.state !== "uncertain")
+                      }
+                    >
+                      <SquareIcon />
+                      Stop task
+                    </Button>
+                  )}
+                </div>
               </div>
+              {task && needsAcknowledgement(task) ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Sigma T3 lost track of whether part of this task started. Acknowledging records
+                  what the server can confirm: confirmed launches continue, the rest are marked
+                  abandoned and never start again.
+                </p>
+              ) : null}
               {task ? (
                 <>
                   <div className="grid gap-3 md:grid-cols-2">

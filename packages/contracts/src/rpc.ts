@@ -6,6 +6,7 @@ import {
   RepositoryTask,
   RepositoryTaskCreateInput,
   RepositoryTaskIdInput,
+  RepositoryTaskListInput,
   RepositoryTaskError,
 } from "./repositoryTasks.ts";
 import {
@@ -1810,7 +1811,7 @@ const WsRepositoryGroupsDeleteRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsDelet
   error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
 });
 const WsRepositoryTasksListRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksList, {
-  payload: Schema.Struct({}),
+  payload: RepositoryTaskListInput,
   success: Schema.Struct({ tasks: Schema.Array(RepositoryTask) }),
   error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
 });
@@ -1831,6 +1832,21 @@ const WsRepositoryTasksSubscribeRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksSubs
   stream: true,
 });
 const WsRepositoryTasksStopRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksStop, {
+  payload: RepositoryTaskIdInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksAcknowledgeRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksAcknowledge, {
+  payload: RepositoryTaskIdInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksArchiveRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksArchive, {
+  payload: RepositoryTaskIdInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksUnarchiveRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksUnarchive, {
   payload: RepositoryTaskIdInput,
   success: RepositoryTask,
   error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
@@ -1939,6 +1955,9 @@ export const WsRepositoryTasksRpcGroup = RpcGroup.make(
   WsRepositoryTasksCreateRpc,
   WsRepositoryTasksGetRpc,
   WsRepositoryTasksStopRpc,
+  WsRepositoryTasksAcknowledgeRpc,
+  WsRepositoryTasksArchiveRpc,
+  WsRepositoryTasksUnarchiveRpc,
   WsRepositoryTasksSubscribeRpc,
 ).middleware(RpcScopeAuthorization);
 

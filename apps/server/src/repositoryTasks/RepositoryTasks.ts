@@ -47,6 +47,7 @@ type TaskRow = {
   snapshot_json: string;
   request_json: string;
   state: RepositoryTask["state"];
+  archived_at: string | null;
 };
 type MemberRow = {
   task_id: string;
@@ -90,7 +91,9 @@ export class RepositoryTasks extends Context.Service<
       input: RepositoryGroupUpsertInput,
     ) => Effect.Effect<RepositoryGroup, RepositoryTaskError>;
     readonly deleteGroup: (id: string) => Effect.Effect<void, RepositoryTaskError>;
-    readonly listTasks: Effect.Effect<ReadonlyArray<RepositoryTask>, RepositoryTaskError>;
+    readonly listTasks: (input: {
+      readonly archived: boolean;
+    }) => Effect.Effect<ReadonlyArray<RepositoryTask>, RepositoryTaskError>;
     readonly create: (
       input: RepositoryTaskCreateInput,
     ) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
@@ -100,6 +103,10 @@ export class RepositoryTasks extends Context.Service<
       callerThreadId: ThreadId,
     ) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
     readonly stop: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
+    /** Settles uncertain launches from what was persisted, without launching anything again. */
+    readonly acknowledge: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
+    readonly archive: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
+    readonly unarchive: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
     readonly reconcile: (taskId: string) => Effect.Effect<void, RepositoryTaskError>;
     readonly recover: Effect.Effect<void, RepositoryTaskError>;
     readonly taskIdsForThread: (
@@ -332,8 +339,8 @@ const make = Effect.gen(function* () {
       const memberStatus =
         member.launch_state === "pending"
           ? "not_started"
-          : member.launch_state === "uncertain"
-            ? "uncertain"
+          : member.launch_state === "uncertain" || member.launch_state === "abandoned"
+            ? member.launch_state
             : record !== null && settled(record) && !(yield* treeSettled(record))
               ? "waiting"
               : status(record);
@@ -439,6 +446,7 @@ const make = Effect.gen(function* () {
       state: row.state,
       status: taskStatus,
       coordinatorStatus,
+      archivedAt: row.archived_at,
       members: views,
       graph,
     };
@@ -609,7 +617,8 @@ const make = Effect.gen(function* () {
         if (
           member.role !== input.role ||
           member.prompt !== input.prompt ||
-          member.launch_state === "uncertain"
+          member.launch_state === "uncertain" ||
+          member.launch_state === "abandoned"
         )
           return yield* fail("conflict");
         return yield* get(input.taskId);
@@ -779,6 +788,7 @@ const make = Effect.gen(function* () {
       !members.every(
         (member) =>
           member.launch_state === "pending" ||
+          member.launch_state === "abandoned" ||
           (member.launch_state === "dispatched" && member.delivery_state === "delivered"),
       )
     )
@@ -863,6 +873,23 @@ const make = Effect.gen(function* () {
         ),
       ),
   );
+  // A launch counts only when both its command and its first message were persisted.
+  const launchAccepted = Effect.fn("RepositoryTasks.launchAccepted")(function* (
+    taskId: string,
+    threadId: ThreadId,
+    suffix: string,
+  ) {
+    const receipt = yield* receipts
+      .getByCommandId(command(taskId, suffix))
+      .pipe(Effect.mapError(executionError));
+    if (Option.isNone(receipt) || receipt.value.status !== "accepted") return false;
+    const record = yield* records(threadId);
+    return record?.messages.some((entry) => entry.id === message(taskId, suffix)) ?? false;
+  });
+  const coordinatorAccepted = (taskId: string) =>
+    launchAccepted(taskId, ThreadId.make(`repository-task:${taskId}:coordinator`), "coordinator");
+  const memberAccepted = (taskId: string, threadId: ThreadId) =>
+    launchAccepted(taskId, threadId, `launch:${threadId}`);
   const recover = Effect.fn("RepositoryTasks.recover")(function* () {
     const rows =
       yield* sql<TaskRow>`SELECT * FROM repository_tasks WHERE state IN ('active', 'stopping', 'uncertain')`.pipe(
@@ -870,32 +897,13 @@ const make = Effect.gen(function* () {
       );
     for (const row of rows) {
       const { members } = yield* readTask(row.id);
-      const coordinator = yield* receipts
-        .getByCommandId(command(row.id, "coordinator"))
-        .pipe(Effect.mapError(executionError));
-      const coordinatorRecords = yield* records(
-        ThreadId.make(`repository-task:${row.id}:coordinator`),
-      );
-      if (
-        Option.isNone(coordinator) ||
-        coordinator.value.status !== "accepted" ||
-        !coordinatorRecords?.messages.some((entry) => entry.id === message(row.id, "coordinator"))
-      )
+      if (!(yield* coordinatorAccepted(row.id)))
         yield* sql`UPDATE repository_tasks SET state = 'uncertain' WHERE id = ${row.id}`.pipe(
           Effect.mapError(persistenceError),
         );
       for (const member of members) {
         if (member.launch_state === "dispatching" || member.launch_state === "uncertain") {
-          const receipt = yield* receipts
-            .getByCommandId(command(row.id, `launch:${member.thread_id}`))
-            .pipe(Effect.mapError(executionError));
-          const record = yield* records(member.thread_id);
-          const acceptedMessage =
-            record?.messages.some(
-              (entry) => entry.id === message(row.id, `launch:${member.thread_id}`),
-            ) ?? false;
-          const accepted =
-            Option.isSome(receipt) && receipt.value.status === "accepted" && acceptedMessage;
+          const accepted = yield* memberAccepted(row.id, member.thread_id);
           yield* sql`UPDATE repository_task_members SET launch_state = ${accepted ? "dispatched" : "uncertain"} WHERE task_id = ${row.id} AND project_id = ${member.project_id}`.pipe(
             Effect.mapError(persistenceError),
           );
@@ -905,12 +913,57 @@ const make = Effect.gen(function* () {
       else yield* reconcile(row.id);
     }
   });
-  const listTasks = sql<{
-    id: string;
-  }>`SELECT id FROM repository_tasks ORDER BY rowid DESC LIMIT 100`.pipe(
-    Effect.mapError(persistenceError),
-    Effect.flatMap((rows) => Effect.forEach(rows, (row) => get(row.id))),
+  const observeUncertain = Effect.fn("RepositoryTasks.observeUncertain")(
+    function* (taskId: string) {
+      const { row, members } = yield* readTask(taskId);
+      for (const member of members) {
+        if (member.launch_state !== "uncertain") continue;
+        const accepted = yield* memberAccepted(taskId, member.thread_id);
+        yield* sql`UPDATE repository_task_members SET launch_state = ${accepted ? "dispatched" : "abandoned"} WHERE task_id = ${taskId} AND project_id = ${member.project_id} AND launch_state = 'uncertain'`.pipe(
+          Effect.mapError(persistenceError),
+        );
+      }
+      if (row.state !== "uncertain") return row.state === "active" ? "reconcile" : "none";
+      // Without a started coordinator nobody can collect results, so the task can only stop.
+      if (!(yield* coordinatorAccepted(taskId))) return "stop";
+      yield* sql`UPDATE repository_tasks SET state = 'active' WHERE id = ${taskId} AND state = 'uncertain'`.pipe(
+        Effect.mapError(persistenceError),
+      );
+      return "reconcile";
+    },
+    (effect, taskId) => locks.withLock(taskId, effect),
   );
+  const acknowledge = Effect.fn("RepositoryTasks.acknowledge")(function* (taskId: string) {
+    const next = yield* observeUncertain(taskId);
+    if (next === "stop") yield* stop(taskId);
+    else if (next === "reconcile") yield* reconcile(taskId);
+    yield* notifyChanged;
+    return yield* get(taskId);
+  });
+  const setArchived = Effect.fn("RepositoryTasks.setArchived")(
+    function* (taskId: string, archived: boolean) {
+      const { row } = yield* readTask(taskId);
+      // Archiving hides a task, so one that may still run or claim repositories stays visible.
+      if (archived && row.state !== "finished" && row.state !== "stopped")
+        return yield* fail("conflict");
+      const archivedAt = archived ? DateTime.formatIso(yield* DateTime.now) : null;
+      yield* sql`UPDATE repository_tasks SET archived_at = ${archivedAt} WHERE id = ${taskId} AND (archived_at IS NULL) = ${archived ? 1 : 0}`.pipe(
+        Effect.mapError(persistenceError),
+      );
+      yield* notifyChanged;
+      return yield* get(taskId);
+    },
+    (effect, taskId) => locks.withLock(taskId, effect),
+  );
+  const listTasks = Effect.fn("RepositoryTasks.listTasks")(function* (input: {
+    readonly archived: boolean;
+  }) {
+    const rows = yield* sql<{ id: string }>`
+      SELECT id FROM repository_tasks WHERE (archived_at IS NOT NULL) = ${input.archived ? 1 : 0}
+      ORDER BY rowid DESC LIMIT 100
+    `.pipe(Effect.mapError(persistenceError));
+    return yield* Effect.forEach(rows, (row) => get(row.id));
+  });
   const taskIdsForThread = Effect.fn("RepositoryTasks.taskIdsForThread")(function* (
     threadId: ThreadId,
   ) {
@@ -964,6 +1017,9 @@ const make = Effect.gen(function* () {
     get,
     dispatch,
     stop,
+    acknowledge,
+    archive: (taskId) => setArchived(taskId, true),
+    unarchive: (taskId) => setArchived(taskId, false),
     reconcile,
     recover: recover(),
     taskIdsForThread,
