@@ -16,12 +16,17 @@ export const layer = ServerRepositoryTasksRpcGroup.toLayer(
         tasks.listGroups.pipe(Effect.map((groups) => ({ groups }))),
       [REPOSITORY_TASK_METHODS.groupsUpsert]: (input) => tasks.upsertGroup(input),
       [REPOSITORY_TASK_METHODS.groupsDelete]: ({ id }) => tasks.deleteGroup(id).pipe(Effect.as({})),
-      [REPOSITORY_TASK_METHODS.tasksList]: () =>
-        tasks.listTasks.pipe(Effect.map((list) => ({ tasks: list }))),
+      [REPOSITORY_TASK_METHODS.tasksList]: ({ archived }) =>
+        tasks
+          .listTasks({ archived: archived ?? false })
+          .pipe(Effect.map((list) => ({ tasks: list }))),
       [REPOSITORY_TASK_METHODS.tasksCreate]: (input) => tasks.create(input),
       [REPOSITORY_TASK_METHODS.tasksGet]: ({ taskId }) => tasks.get(taskId),
       [REPOSITORY_TASK_METHODS.tasksSubscribe]: ({ taskId }) => tasks.subscribe(taskId),
       [REPOSITORY_TASK_METHODS.tasksStop]: ({ taskId }) => tasks.stop(taskId),
+      [REPOSITORY_TASK_METHODS.tasksAcknowledge]: ({ taskId }) => tasks.acknowledge(taskId),
+      [REPOSITORY_TASK_METHODS.tasksArchive]: ({ taskId }) => tasks.archive(taskId),
+      [REPOSITORY_TASK_METHODS.tasksUnarchive]: ({ taskId }) => tasks.unarchive(taskId),
     }),
   ),
 );

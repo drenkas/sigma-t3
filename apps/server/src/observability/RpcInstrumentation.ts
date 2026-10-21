@@ -22,6 +22,9 @@ const RPC_AGGREGATES = {
   [REPOSITORY_TASK_METHODS.tasksCreate]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.tasksGet]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.tasksStop]: "repositoryTasks",
+  [REPOSITORY_TASK_METHODS.tasksAcknowledge]: "repositoryTasks",
+  [REPOSITORY_TASK_METHODS.tasksArchive]: "repositoryTasks",
+  [REPOSITORY_TASK_METHODS.tasksUnarchive]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.tasksSubscribe]: "repositoryTasks",
 
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",

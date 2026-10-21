@@ -60,5 +60,32 @@ export function createRepositoryTaskEnvironmentAtoms<R, E>(
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.taskId]),
       },
     }),
+    acknowledgeTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:repository-tasks:acknowledge",
+      tag: REPOSITORY_TASK_METHODS.tasksAcknowledge,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.taskId]),
+      },
+    }),
+    archiveTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:repository-tasks:archive",
+      tag: REPOSITORY_TASK_METHODS.tasksArchive,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.taskId]),
+      },
+    }),
+    unarchiveTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:repository-tasks:unarchive",
+      tag: REPOSITORY_TASK_METHODS.tasksUnarchive,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.taskId]),
+      },
+    }),
   };
 }

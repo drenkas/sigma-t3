@@ -2419,7 +2419,7 @@ it.effect.each(["model", "option", "duplicate-role"] as const)(
             : [{ role: "implementation", modelSelection: selection }];
         const error = yield* tasks.create({ ...harness.input, roles }).pipe(Effect.flip);
         assert.include(["invalid", "unavailable"], error.reason);
-        assert.equal((yield* tasks.listTasks).length, 0);
+        assert.equal((yield* tasks.listTasks({ archived: false })).length, 0);
       }).pipe(Effect.provide(harness.layer));
     }).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -2689,6 +2689,119 @@ it.effect(
         );
       }).pipe(Effect.provide(harness.layer));
     }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task acknowledgement settles uncertain launches from persisted state without launching again",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const sql = yield* SqlClient.SqlClient;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        const [launched, lost] = task.snapshot.members;
+        yield* tasks.dispatch(
+          { taskId: harness.input.id, projectId, role: "implementation", prompt: "First" },
+          task.snapshot.coordinatorThreadId,
+        );
+        // One launch committed before the outcome was lost, the other never reached the engine.
+        yield* sql`UPDATE repository_task_members SET launch_state = 'uncertain' WHERE task_id = ${harness.input.id} AND project_id = ${projectId}`;
+        yield* sql`UPDATE repository_task_members SET launch_state = 'uncertain', role = 'implementation', prompt = 'Second' WHERE task_id = ${harness.input.id} AND project_id = ${otherProjectId}`;
+        yield* sql`UPDATE repository_tasks SET state = 'uncertain' WHERE id = ${harness.input.id}`;
+
+        const acknowledged = yield* tasks.acknowledge(harness.input.id);
+        const replay = yield* tasks.acknowledge(harness.input.id);
+
+        for (const view of [acknowledged, replay]) {
+          assert.equal(view.state, "active");
+          const launchStates = new Map(
+            view.members.map((member) => [member.snapshot.projectId, member.launchState]),
+          );
+          assert.equal(launchStates.get(projectId), "dispatched");
+          assert.equal(launchStates.get(otherProjectId), "abandoned");
+        }
+        assert.equal((yield* threads.getThreadProjection(launched!.threadId)).messages.length, 1);
+        assert.isNull(yield* threads.getThreadShell(lost!.threadId));
+        const redispatch = yield* tasks
+          .dispatch(
+            {
+              taskId: harness.input.id,
+              projectId: otherProjectId,
+              role: "implementation",
+              prompt: "Second",
+            },
+            task.snapshot.coordinatorThreadId,
+          )
+          .pipe(Effect.flip);
+        assert.equal(redispatch.reason, "conflict");
+        assert.isNull(yield* threads.getThreadShell(lost!.threadId));
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("repository task acknowledgement stops a task whose coordinator never started", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeRepositoryTaskHarness();
+    yield* Effect.gen(function* () {
+      const tasks = yield* RepositoryTasks.RepositoryTasks;
+      const sql = yield* SqlClient.SqlClient;
+      yield* tasks.upsertGroup({
+        id: harness.input.groupId,
+        title: "Group",
+        projectIds: [projectId, otherProjectId],
+      });
+      yield* tasks.create(harness.input);
+      yield* sql`DELETE FROM orchestration_command_receipts WHERE command_id = ${`repository-task:${harness.input.id}:coordinator`}`;
+      yield* sql`UPDATE repository_tasks SET state = 'uncertain' WHERE id = ${harness.input.id}`;
+
+      const acknowledged = yield* tasks.acknowledge(harness.input.id);
+
+      assert.include(["stopping", "stopped"], acknowledged.state);
+      assert.isTrue(acknowledged.members.every((member) => member.launchState === "pending"));
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("repository task archive hides only tasks that can no longer run, and unarchives", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeRepositoryTaskHarness();
+    yield* Effect.gen(function* () {
+      const tasks = yield* RepositoryTasks.RepositoryTasks;
+      const sql = yield* SqlClient.SqlClient;
+      yield* tasks.upsertGroup({
+        id: harness.input.groupId,
+        title: "Group",
+        projectIds: [projectId, otherProjectId],
+      });
+      yield* tasks.create(harness.input);
+      assert.equal((yield* tasks.archive(harness.input.id).pipe(Effect.flip)).reason, "conflict");
+      assert.isNull((yield* tasks.get(harness.input.id)).archivedAt);
+
+      yield* sql`UPDATE repository_tasks SET state = 'stopped' WHERE id = ${harness.input.id}`;
+      const archived = yield* tasks.archive(harness.input.id);
+      assert.isNotNull(archived.archivedAt);
+      assert.equal((yield* tasks.archive(harness.input.id)).archivedAt, archived.archivedAt);
+      assert.isEmpty(yield* tasks.listTasks({ archived: false }));
+      assert.deepEqual(
+        (yield* tasks.listTasks({ archived: true })).map((task) => task.snapshot.id),
+        [harness.input.id],
+      );
+
+      const restored = yield* tasks.unarchive(harness.input.id);
+      assert.isNull(restored.archivedAt);
+      assert.deepEqual(
+        (yield* tasks.listTasks({ archived: false })).map((task) => task.snapshot.id),
+        [harness.input.id],
+      );
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect(
@@ -3017,7 +3130,7 @@ it.effect(
         const error = yield* tasks.create(harness.input).pipe(Effect.flip);
         assert.equal(error.reason, "scratch-unavailable");
         assert.include(error.message, "data directory outside a Git checkout");
-        assert.isEmpty(yield* tasks.listTasks);
+        assert.isEmpty(yield* tasks.listTasks({ archived: false }));
         assert.isNull(
           yield* threads.getThreadShell(
             ThreadId.make(`repository-task:${harness.input.id}:coordinator`),

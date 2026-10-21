@@ -9,3 +9,7 @@ Create a group with at least two projects from the same host, then save it. Star
 If a selected provider model or one of its advertised options becomes unavailable before launch, the form keeps the selection visible and blocks task creation until you choose an available option. Save group edits before starting a task; task membership always comes from the saved group.
 
 Reopen a task from its task list to follow participant states, open native sessions or diffs, and inspect the recorded execution graph. The Stop action applies to the whole task.
+
+If the server loses track of whether part of a task started, for example after a crash during launch, the task shows as uncertain and never retries on its own. Choose **Acknowledge observed state** to settle it from what the server recorded: launches it can confirm continue, the rest are marked abandoned and do not start again. A task whose coordinator never started is stopped instead.
+
+Archive a finished or stopped task to hide it from the task list; the **Archived** filter shows archived tasks, and **Unarchive** brings one back. Running or uncertain tasks cannot be archived.
