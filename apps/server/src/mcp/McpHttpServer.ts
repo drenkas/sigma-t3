@@ -1,3 +1,5 @@
+import { RepositoryTasksToolkit } from "./toolkits/repositoryTasks/tools.ts";
+import * as RepositoryTasksHandlers from "./toolkits/repositoryTasks/handlers.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -769,6 +771,7 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
  */
 const HANDOFF_TOOLS: ReadonlySet<string> = new Set([
   "delegate_task",
+  "repository_task_dispatch",
   "create_threads",
   "t3_thread_launch",
   "t3_thread_send",
@@ -1067,6 +1070,7 @@ export const layerMcpTransport = McpServer.layerHttp({
 
 export const layer = Layer.mergeAll(
   layerPreviewToolkit,
+  toolkitRegistration(RepositoryTasksToolkit, RepositoryTasksHandlers.layer),
   layerOrchestratorToolkit,
   layerThreadToolkit,
   layerAttachmentToolkit,

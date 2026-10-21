@@ -22,6 +22,7 @@ import {
   SearchIcon,
   Settings2Icon,
   XIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
@@ -190,6 +191,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     });
   };
 
+  const handleRepositoryTasksClick = () => {
+    if (isMobile) setOpenMobile(false);
+    void navigate({ to: "/repository-tasks", search: {} });
+  };
+
   const clearSearch = () => {
     setQuery("");
     setActiveResultIndex(0);
@@ -328,6 +334,15 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               </SidebarMenu>
             ) : (
               <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname === "/repository-tasks"}
+                    onClick={handleRepositoryTasksClick}
+                  >
+                    <WorkflowIcon />
+                    <span className="truncate">Repository tasks</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isGeneralDetailPage =

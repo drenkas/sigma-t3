@@ -128,12 +128,12 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       const npx = "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs";
       // sudo's secure_path already has a system Node.
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
-        "sudo npx t3 browser setup",
+        "sudo npx t3@preview browser setup",
       );
       // nvm, fnm, and tarball installs are dropped by sudo's PATH reset.
       expect(
         yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
-      ).toBe('sudo env "PATH=$PATH" npx t3 browser setup');
+      ).toBe('sudo env "PATH=$PATH" npx t3@preview browser setup');
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
@@ -155,7 +155,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       const desktop = {
         node: "/tmp/.mount_T3abc/t3code",
         entry: "/tmp/.mount_T3abc/resources/app.asar/apps/server/dist/bin.mjs",
-        env: { T3CODE_CLI_PATH: shim },
+        env: { SIGMA_T3_CLI_PATH: shim },
       };
 
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
@@ -173,7 +173,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       ).toBe("sudo /opt/t3/t3 browser setup");
 
       expect(
-        yield* rootCommand({ ...desktop, env: { T3CODE_CLI_PATH: path.join(home, "gone") } }),
+        yield* rootCommand({ ...desktop, env: { SIGMA_T3_CLI_PATH: path.join(home, "gone") } }),
       ).toBe('sudo env "PATH=$PATH" t3 browser setup');
     }).pipe(Effect.scoped),
   );
@@ -200,7 +200,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
         );
       // The desktop shim is called through `&`, and each argument is quoted
       // the PowerShell way: no POSIX single quotes anywhere.
-      expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
+      expect((yield* hostCommand("win32", { SIGMA_T3_CLI_PATH: shim })).command).toBe(
         `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
       );
       // Without a launcher, plain `t3` with PowerShell-quoted arguments.
@@ -219,7 +219,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       ).toBe('t3 doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
       // POSIX hosts keep single quotes for the same input. The shim prefix is
       // a host path, so only the arguments are asserted.
-      expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
+      expect((yield* hostCommand("linux", { SIGMA_T3_CLI_PATH: shim })).command).toMatch(
         / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
       );
     }).pipe(Effect.scoped),
@@ -268,7 +268,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
-      const prefix = path.join(root, "bunx-tools");
+      const prefix = yield* fs
+        .realPath(root)
+        .pipe(Effect.map((root) => path.join(root, "bunx-tools")));
       const packageRoot = path.join(prefix, "lib/node_modules/t3");
       const entry = path.join(packageRoot, "dist/bin.mjs");
       const globalBin = path.join(prefix, "bin/t3");
@@ -299,7 +301,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
-      const prefix = path.join(root, "bunx-tools");
+      const prefix = yield* fs
+        .realPath(root)
+        .pipe(Effect.map((root) => path.join(root, "bunx-tools")));
       const packageRoot = path.join(prefix, "lib/node_modules/t3");
       const launcher = path.join(packageRoot, "bin/t3.mjs");
       const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");

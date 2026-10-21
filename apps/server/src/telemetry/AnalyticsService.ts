@@ -1,8 +1,4 @@
-/**
- * Events go to the T3 Code ingest endpoint, which keeps a copy and forwards
- * them to PostHog. Each event carries a uuid, so PostHog can tell a retried
- * copy from a new event.
- */
+// Analytics is opt-in for this fork and requires its own configured destination.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type { ClientOs } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -71,16 +67,28 @@ export function retryDelayMs(failures: number, random: number): number {
   return Math.round(ceiling / 2 + (ceiling / 2) * random);
 }
 
+const telemetryDestination = Config.all({
+  posthogKey: Config.String("SIGMA_T3_POSTHOG_KEY").pipe(Config.withDefault("")),
+  posthogHost: Config.String("SIGMA_T3_POSTHOG_HOST").pipe(Config.withDefault("")),
+});
+
+export const telemetryEnabled = Config.all({
+  requested: Config.Boolean("SIGMA_T3_TELEMETRY_ENABLED").pipe(Config.withDefault(false)),
+  destination: telemetryDestination,
+}).pipe(
+  Config.map(
+    ({ requested, destination }) =>
+      requested &&
+      destination.posthogKey.trim().length > 0 &&
+      destination.posthogHost.trim().length > 0,
+  ),
+);
+
 const TelemetryEnvConfig = Config.all({
-  posthogKey: Config.String("T3CODE_POSTHOG_KEY").pipe(
-    Config.withDefault("phc_XOWci4oZP4VvLiEyrFqkFjP4CZn55mjYYBMREK5Wd6m"),
-  ),
-  posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
-    Config.withDefault("https://ingest.t3.codes"),
-  ),
-  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
-  flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
-  maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
+  destination: telemetryDestination,
+  enabled: telemetryEnabled,
+  flushBatchSize: Config.Number("SIGMA_T3_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
+  maxBufferedEvents: Config.Number("SIGMA_T3_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
   ),
   wslDistroName: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
@@ -136,6 +144,13 @@ function serverOsFromNodePlatform(platform: string): ClientOs {
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
+  if (!telemetryConfig.enabled) {
+    return AnalyticsService.of({
+      record: () => Effect.void,
+      flush: Effect.void,
+      recordOwners: () => Effect.void,
+    });
+  }
   const httpClient = yield* HttpClient.HttpClient;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const { distinctId, installId } = yield* getTelemetryIdentity;
@@ -196,7 +211,7 @@ export const make = Effect.gen(function* () {
     if (!telemetryConfig.enabled || !distinctId) return;
 
     const payload = {
-      api_key: telemetryConfig.posthogKey,
+      api_key: telemetryConfig.destination.posthogKey,
       batch: events.map((event) => ({
         uuid: event.uuid,
         event: event.event,
@@ -221,7 +236,7 @@ export const make = Effect.gen(function* () {
       })),
     };
 
-    yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
+    yield* HttpClientRequest.post(`${telemetryConfig.destination.posthogHost}/batch/`).pipe(
       HttpClientRequest.bodyJson(payload),
       Effect.flatMap(httpClient.execute),
       Effect.flatMap(HttpClientResponse.filterStatusOk),

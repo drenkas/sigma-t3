@@ -552,7 +552,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
-        T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
+        SIGMA_T3_CLI_PATH: Option.getOrUndefined(input.cliPath),
       },
       extendEnv: true,
       bootstrap,
@@ -669,7 +669,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
 
   const parentEnvWithoutT3Home: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key === "T3CODE_HOME") continue;
+    if (key === "SIGMA_T3_HOME") continue;
     parentEnvWithoutT3Home[key] = value;
   }
   const wslEnv = mergeWslEnv(parentEnvWithoutT3Home.WSLENV, forwardedEnvNames);
@@ -685,7 +685,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       ...forwardedEnv,
       ...(wslEnv !== undefined ? { WSLENV: wslEnv } : {}),
     },
-    // env is already a complete process.env minus T3CODE_HOME; pass it
+    // env is already a complete process.env minus SIGMA_T3_HOME; pass it
     // verbatim instead of letting the spawner re-merge process.env on top.
     extendEnv: false,
     bootstrap,

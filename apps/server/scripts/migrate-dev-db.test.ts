@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -279,3 +280,29 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
     }),
   );
 });
+
+it.effect("defaults to fork data and never falls back to the official app when missing", () =>
+  Effect.gen(function* () {
+    const home = yield* HostProcess.HomeDirectory;
+    const path = yield* Path.Path;
+    const checked: string[] = [];
+    const error = yield* runMigrateDevDb({
+      baseDir: "/isolated/sigma-test",
+      projects: 1,
+      threadsPerProject: 0,
+    }).pipe(
+      Effect.provideService(
+        FileSystem.FileSystem,
+        FileSystem.makeNoop({
+          exists: (file) => {
+            checked.push(file);
+            return Effect.succeed(false);
+          },
+        }),
+      ),
+      Effect.flip,
+    );
+    assert.equal(error._tag, "MigrateDevDbSourceMissingError");
+    assert.deepEqual(checked, [path.join(home, ".sigma-t3", "userdata", "statev2.sqlite")]);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);

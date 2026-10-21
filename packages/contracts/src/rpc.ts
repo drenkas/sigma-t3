@@ -1,4 +1,14 @@
 import {
+  REPOSITORY_TASK_METHODS,
+  RepositoryGroup,
+  RepositoryGroupUpsertInput,
+  RepositoryGroupIdInput,
+  RepositoryTask,
+  RepositoryTaskCreateInput,
+  RepositoryTaskIdInput,
+  RepositoryTaskError,
+} from "./repositoryTasks.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -1784,6 +1794,48 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
   stream: true,
 });
 
+const WsRepositoryGroupsListRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsList, {
+  payload: Schema.Struct({}),
+  success: Schema.Struct({ groups: Schema.Array(RepositoryGroup) }),
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryGroupsUpsertRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsUpsert, {
+  payload: RepositoryGroupUpsertInput,
+  success: RepositoryGroup,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryGroupsDeleteRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsDelete, {
+  payload: RepositoryGroupIdInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksListRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksList, {
+  payload: Schema.Struct({}),
+  success: Schema.Struct({ tasks: Schema.Array(RepositoryTask) }),
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksCreateRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksCreate, {
+  payload: RepositoryTaskCreateInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksGetRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksGet, {
+  payload: RepositoryTaskIdInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksSubscribeRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksSubscribe, {
+  payload: RepositoryTaskIdInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+const WsRepositoryTasksStopRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksStop, {
+  payload: RepositoryTaskIdInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -1879,7 +1931,18 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
   { error: EnvironmentAuthorizationError },
 ) {}
 
-export const WsRpcGroup = RpcGroup.make(
+export const WsRepositoryTasksRpcGroup = RpcGroup.make(
+  WsRepositoryGroupsListRpc,
+  WsRepositoryGroupsUpsertRpc,
+  WsRepositoryGroupsDeleteRpc,
+  WsRepositoryTasksListRpc,
+  WsRepositoryTasksCreateRpc,
+  WsRepositoryTasksGetRpc,
+  WsRepositoryTasksStopRpc,
+  WsRepositoryTasksSubscribeRpc,
+).middleware(RpcScopeAuthorization);
+
+export const WsCoreRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -2079,3 +2142,5 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeThreadRpc,
   WsOrchestrationV2SubscribeCommandOutputRpc,
 ).middleware(RpcScopeAuthorization);
+
+export const WsRpcGroup = WsCoreRpcGroup.merge(WsRepositoryTasksRpcGroup);

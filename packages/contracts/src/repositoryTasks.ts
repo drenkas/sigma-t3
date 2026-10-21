@@ -1,0 +1,158 @@
+import * as Schema from "effect/Schema";
+import { IsoDateTime, ProjectId, RunId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ModelSelection } from "./modelSelection.ts";
+import { RuntimeMode, ProviderInteractionMode } from "./providerPolicy.ts";
+import { OrchestrationV2ThreadLaunchWorkspaceStrategy } from "./orchestrationV2.ts";
+import { OrchestratorMcpTaskRole } from "./orchestratorMcp.ts";
+
+const Id = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(128),
+  Schema.isPattern(/^[a-zA-Z0-9:_-]+$/),
+);
+const Title = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
+const Prompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120000));
+export const RepositoryTaskRole = Schema.Struct({
+  role: OrchestratorMcpTaskRole,
+  modelSelection: ModelSelection,
+});
+export type RepositoryTaskRole = typeof RepositoryTaskRole.Type;
+export const RepositoryGroup = Schema.Struct({
+  id: Id,
+  title: Title,
+  projectIds: Schema.Array(ProjectId),
+  updatedAt: IsoDateTime,
+});
+export type RepositoryGroup = typeof RepositoryGroup.Type;
+export const RepositoryGroupUpsertInput = Schema.Struct({
+  id: Id,
+  title: Title,
+  projectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+});
+export type RepositoryGroupUpsertInput = typeof RepositoryGroupUpsertInput.Type;
+export const RepositoryGroupIdInput = Schema.Struct({ id: Id });
+export const RepositoryTaskMemberInput = Schema.Struct({
+  projectId: ProjectId,
+  workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+});
+export const RepositoryTaskCreateInput = Schema.Struct({
+  id: Id,
+  groupId: Id,
+  title: Title,
+  prompt: Prompt,
+  coordinatorProjectId: ProjectId,
+  modelSelection: ModelSelection,
+  roles: Schema.Array(RepositoryTaskRole).check(Schema.isMinLength(1), Schema.isMaxLength(12)),
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+  members: Schema.Array(RepositoryTaskMemberInput).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(20),
+  ),
+});
+export type RepositoryTaskCreateInput = typeof RepositoryTaskCreateInput.Type;
+export const RepositoryTaskMemberSnapshot = Schema.Struct({
+  ...RepositoryTaskMemberInput.fields,
+  workspaceRoot: TrimmedNonEmptyString,
+  startingRevision: TrimmedNonEmptyString,
+  threadId: ThreadId,
+});
+export type RepositoryTaskMemberSnapshot = typeof RepositoryTaskMemberSnapshot.Type;
+export const RepositoryTaskSnapshot = Schema.Struct({
+  ...RepositoryTaskCreateInput.fields,
+  groupTitle: Title,
+  coordinatorThreadId: ThreadId,
+  coordinatorWorkspaceProjectId: ProjectId,
+  members: Schema.Array(RepositoryTaskMemberSnapshot),
+  createdAt: IsoDateTime,
+});
+export type RepositoryTaskSnapshot = typeof RepositoryTaskSnapshot.Type;
+export const RepositoryTaskIdInput = Schema.Struct({ taskId: Id });
+export const RepositoryTaskDispatchInput = Schema.Struct({
+  taskId: Id,
+  projectId: ProjectId,
+  role: OrchestratorMcpTaskRole,
+  prompt: Prompt,
+});
+export type RepositoryTaskDispatchInput = typeof RepositoryTaskDispatchInput.Type;
+export const RepositoryTaskGraphNode = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  threadId: Schema.NullOr(ThreadId),
+  kind: Schema.Literals(["coordinator", "repository", "agent"]),
+  origin: Schema.optional(Schema.Literals(["app_owned", "provider_native"])),
+  title: Schema.String,
+  role: Schema.NullOr(Schema.String),
+  modelSelection: Schema.NullOr(ModelSelection),
+  status: Schema.String,
+});
+export const RepositoryTaskGraphEdge = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  source: TrimmedNonEmptyString,
+  target: TrimmedNonEmptyString,
+  kind: Schema.Literals(["membership", "delegation", "result", "context_transfer"]),
+  status: Schema.String,
+});
+export const RepositoryTaskMember = Schema.Struct({
+  snapshot: RepositoryTaskMemberSnapshot,
+  role: Schema.NullOr(Schema.String),
+  launchState: Schema.Literals(["pending", "dispatching", "dispatched", "uncertain"]),
+  status: Schema.String,
+  runId: Schema.NullOr(RunId),
+  workspacePath: Schema.NullOr(Schema.String),
+  branch: Schema.NullOr(Schema.String),
+  preparedRevision: Schema.NullOr(Schema.String),
+  pendingApproval: Schema.Boolean,
+  deliveryState: Schema.Literals(["pending", "delivering", "delivered", "disposed"]),
+});
+export const RepositoryTask = Schema.Struct({
+  snapshot: RepositoryTaskSnapshot,
+  state: Schema.Literals(["active", "stopping", "stopped", "uncertain"]),
+  status: Schema.Literals([
+    "pending",
+    "running",
+    "waiting",
+    "completed",
+    "failed",
+    "interrupted",
+    "stopping",
+    "stopped",
+    "uncertain",
+  ]),
+  coordinatorStatus: Schema.String,
+  members: Schema.Array(RepositoryTaskMember),
+  graph: Schema.Struct({
+    nodes: Schema.Array(RepositoryTaskGraphNode),
+    edges: Schema.Array(RepositoryTaskGraphEdge),
+  }),
+});
+export type RepositoryTask = typeof RepositoryTask.Type;
+export class RepositoryTaskError extends Schema.TaggedError<RepositoryTaskError>()(
+  "RepositoryTaskError",
+  {
+    reason: Schema.Literals([
+      "invalid",
+      "not-found",
+      "conflict",
+      "unavailable",
+      "scratch-unavailable",
+      "persistence",
+      "execution",
+    ]),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    if (this.reason === "scratch-unavailable")
+      return "Repository tasks require a data directory outside a Git checkout. Restart Sigma T3 with a data directory outside the repository.";
+    return `Repository task operation failed (${this.reason}).`;
+  }
+}
+export const REPOSITORY_TASK_METHODS = {
+  groupsList: "repositoryGroups.list",
+  groupsUpsert: "repositoryGroups.upsert",
+  groupsDelete: "repositoryGroups.delete",
+  tasksList: "repositoryTasks.list",
+  tasksCreate: "repositoryTasks.create",
+  tasksGet: "repositoryTasks.get",
+  tasksStop: "repositoryTasks.stop",
+  tasksSubscribe: "repositoryTasks.subscribe",
+} as const;

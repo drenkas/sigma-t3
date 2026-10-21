@@ -28,6 +28,14 @@ it("rejects other clients before looking at the active window", async () => {
   expect(await service.capture(":1.23")).toBe("pixels");
 });
 
+it("rejects the official app's bus owner before looking at the active window", async () => {
+  const { service, snapshots } = fixture({
+    getNameOwner: async (name) => (name === "com.t3tools.T3Code.SnapShot" ? ":1.23" : null),
+  });
+  await expect(service.capture(":1.23")).rejects.toThrow("Only T3 Code");
+  expect(snapshots()).toBe(0);
+});
+
 it.each(CLIENT_NAMES)("accepts the current owner of %s", async (client) => {
   const { service } = fixture({ getNameOwner: async (name) => (name === client ? ":1.23" : null) });
   expect(await service.capture(":1.23")).toBe("pixels");

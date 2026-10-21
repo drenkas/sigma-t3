@@ -21,7 +21,7 @@ describe("needsConsoleStdin", () => {
       // Output to a pipe or file: the desktop backend, scripts, CI.
       { ...launcher, stdoutIsConsole: false },
       // The desktop backend runs the same executable but is not the launcher.
-      { ...launcher, env: { ELECTRON_RUN_AS_NODE: "1", T3CODE_CLI_PATH: "C:\\t3.cmd" } },
+      { ...launcher, env: { ELECTRON_RUN_AS_NODE: "1", SIGMA_T3_CLI_PATH: "C:\\t3.cmd" } },
       // npm, the install scripts, and plain Node runs.
       { ...launcher, env: {} },
       { ...launcher, platform: "linux" as const },

@@ -1,0 +1,47 @@
+# Sigma T3 fork boundaries and local packaging
+
+Sigma T3 is `drenkas/sigma-t3`, based on `pingdotgg/t3code`. Keep upstream history and internal `@t3tools/*`/MCP names. Repository groups, task coordination, and Graph extend T3 rather than replacing its execution state. The original Sigma repository remains a comparison source; importing its history is separate work.
+
+## Identity and data
+
+The macOS application is **Sigma T3**, bundle ID `com.drenkas.sigma-t3`. Production and development URL schemes are `sigma-t3` and `sigma-t3-dev`; official T3 links are not accepted as fork callbacks. Backend data defaults to `~/.sigma-t3`, or explicit `SIGMA_T3_HOME` / `--base-dir`. Official `T3CODE_HOME` is ignored. Electron profiles are `sigma-t3` and `sigma-t3-dev`, without automatic legacy profile or credential imports. Worktree development keeps its own gitignored `.t3`; use an explicit isolated home when testing.
+
+Local/manual pairing is the supported connection mode. Hosted Connect has no default endpoint or provisioned OAuth/relay configuration. Do not copy upstream `.env` files, Clerk keys, telemetry, or hosted credentials. Direct provider login retains its existing validation and uses the fork's callback scheme.
+
+## Build an isolated macOS arm64 preview
+
+From a clean owned checkout with locked dependencies:
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm exec node scripts/update-release-package-versions.ts 0.1.0-preview.1
+SIGMA_T3_HOME="$PWD/.scratch/package-home" SIGMA_T3_TELEMETRY_ENABLED=false T3CODE_DESKTOP_SIGNED=false corepack pnpm exec node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --build-version 0.1.0-preview.1
+```
+
+The `pnpm exec node` invocation keeps the local `vp` binary on subprocess PATH. The generator updates server, desktop, web, and contracts package versions together. Artifact names use `Sigma-T3-<version>-<arch>`. The packaging script always passes `--publish never`. Preview versions omit updater feed configuration and cannot update from official T3. A stable/nightly build embeds only the `drenkas/sigma-t3` GitHub feed, regardless of ambient GitHub repository hints.
+
+On this macOS 27 host, `hdiutil convert` can fail with `Resource temporarily unavailable`; dmgbuild then reports `plistlib.InvalidFileException` because conversion returned no plist. ZIP packaging avoids disk-image conversion. After a successful bundle build from the same sources, reuse it with:
+
+```sh
+SIGMA_T3_HOME="$PWD/.scratch/package-home" SIGMA_T3_TELEMETRY_ENABLED=false T3CODE_DESKTOP_SIGNED=false corepack pnpm exec node scripts/build-desktop-artifact.ts --platform mac --target zip --arch arm64 --build-version 0.1.0-preview.1 --skip-build --keep-stage
+```
+
+`--keep-stage` preserves the staged `.app` for inspection. A ZIP success does not establish a working DMG.
+
+A preview with `T3CODE_DESKTOP_SIGNED=false` uses electron-builder's explicit ad-hoc signing (`mac.identity: "-"`) and skips notarization. This replaces Electron's inherited signature after renaming the bundle; hardened runtime remains enabled with electron-builder's existing local Electron entitlements. Signed builds retain their release signing and notarization path. Verify the resulting bundle with `codesign --verify --deep --strict`.
+
+Ad-hoc signing provides local bundle integrity, not Developer ID trust or notarization. Archive creation and signature verification do not establish launch readiness. Before distribution, obtain the appropriate Developer ID credentials, build the verified revision, inspect its bundle identity/profile paths, and test installing beside T3 and updating between two own signed builds. Do not launch or install artifacts without the applicable user authorization.
+
+## Publication boundaries
+
+GitHub Actions stays disabled until its jobs are reviewed. Preserve upstream publication guards; the upstream release workflow also publishes npm/mobile/AUR/hosted services and must not be repointed wholesale. Both server and generated npm launcher manifests are private. Standalone install scripts fail before network or disk changes; no standalone CLI channel is released. CLI release lookup defaults to the fork only.
+
+Future own Electron releases use generated platform YAML, ZIP and blockmaps; the old Sigma Tauri `latest.json` process does not apply. Publish only reviewed assets from the exact verified fork revision after separate approval. Upstream sync never signs, installs, publishes, or changes stored app data.
+
+## Privacy and auxiliary runtimes
+
+Analytics is disabled by default and ignores upstream `T3CODE_TELEMETRY_*` / `T3CODE_POSTHOG_*` settings. Opting in requires `SIGMA_T3_TELEMETRY_ENABLED=true` and explicit `SIGMA_T3_POSTHOG_KEY` / `SIGMA_T3_POSTHOG_HOST`; this fork includes no default ingest destination or key. Disabled analytics does not inspect provider credentials or telemetry owners.
+
+WSL caches and SSH device helpers use their own `.sigma-t3/wsl-runtime` and `.sigma-t3/device` roots. Linux capture helpers install below the `sigma-t3` data namespace; KDE authorization entries and GNOME extension UUID, bus name, object path, and allowed clients are fork-specific. Native Linux/WSL execution still needs platform acceptance.
+
+`migrate-dev-db` defaults to the fork's `~/.sigma-t3/userdata/statev2.sqlite` and an isolated worktree destination. A deliberate import from another app requires a separately authorized explicit `--source`; it never happens as a fallback.

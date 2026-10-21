@@ -115,6 +115,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
           yield* fs.readFileString(path.join(output.packageDir, "package.json")),
         );
         assert.equal(manifest.name, "t3");
+        assert.equal(manifest.private, true);
         assert.equal(manifest.version, VERSION);
         assert.deepStrictEqual(manifest.bin, { t3: "./bin/t3.mjs" });
         // Nothing for npm to resolve, so nothing that can lag behind the launcher.
@@ -135,10 +136,10 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const home = path.join(root, "home");
         const env = {
           PATH: process.env.PATH,
-          T3CODE_HOME: home,
-          T3CODE_RELEASE_BASE_URL: release.baseUrl,
+          SIGMA_T3_HOME: home,
+          SIGMA_T3_RELEASE_BASE_URL: release.baseUrl,
         };
-        const launcher = path.join(packageDir, "bin/t3.mjs");
+        const launcher = yield* fs.realPath(path.join(packageDir, "bin/t3.mjs"));
         const first = yield* run(process.execPath, [launcher, "serve", "a b"], {
           cwd: root,
           env,
@@ -191,7 +192,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const raceHome = path.join(root, "race-home");
         const launch = run(process.execPath, [launcher, "--version"], {
           cwd: root,
-          env: { ...env, T3CODE_HOME: raceHome },
+          env: { ...env, SIGMA_T3_HOME: raceHome },
         });
         const [one, two] = yield* Effect.all([launch, launch], { concurrency: "unbounded" });
         assert.equal(one.exitCode, 7, one.stderr);
@@ -204,7 +205,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         release.corruptChecksum();
         const corrupt = yield* run(process.execPath, [launcher, "--version"], {
           cwd: root,
-          env: { ...env, T3CODE_HOME: path.join(root, "other-home") },
+          env: { ...env, SIGMA_T3_HOME: path.join(root, "other-home") },
         });
         assert.equal(corrupt.exitCode, 1);
         assert.include(corrupt.stderr, "checksum mismatch");

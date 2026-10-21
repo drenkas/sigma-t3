@@ -4,6 +4,7 @@ import { assert, it, vi } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
@@ -128,9 +129,9 @@ const sendForTenMinutes = (
       Layer.provide(
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            T3CODE_TELEMETRY_ENABLED: true,
-            T3CODE_POSTHOG_KEY: "phc_test_key",
-            T3CODE_POSTHOG_HOST: "http://localhost",
+            SIGMA_T3_TELEMETRY_ENABLED: true,
+            SIGMA_T3_POSTHOG_KEY: "phc_test_key",
+            SIGMA_T3_POSTHOG_HOST: "http://localhost",
           }),
         ),
       ),
@@ -159,7 +160,17 @@ it("retryDelayMs doubles from 2s and stays under the 5 minute cap", () => {
   assert.equal(AnalyticsService.retryDelayMs(30, 0.999_999), 300_000);
 });
 
-it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
+it.layer(
+  Layer.mergeAll(
+    NodeServices.layer,
+    Layer.effect(
+      HostProcess.HomeDirectory,
+      FileSystem.FileSystem.pipe(
+        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "sigma-telemetry-home-" })),
+      ),
+    ).pipe(Layer.provide(NodeServices.layer)),
+  ),
+)("AnalyticsService test", (it) => {
   it.effect("a batch that keeps failing is retried with the same uuids, then dropped", () =>
     Effect.gen(function* () {
       const failures = {
@@ -275,10 +286,10 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const layerTelemetry = AnalyticsService.layer.pipe(Layer.provideMerge(layerServerConfig));
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: true,
-          T3CODE_POSTHOG_KEY: "phc_test_key",
-          T3CODE_POSTHOG_HOST: "http://localhost",
-          T3CODE_TELEMETRY_FLUSH_BATCH_SIZE: 20,
+          SIGMA_T3_TELEMETRY_ENABLED: true,
+          SIGMA_T3_POSTHOG_KEY: "phc_test_key",
+          SIGMA_T3_POSTHOG_HOST: "http://localhost",
+          SIGMA_T3_TELEMETRY_FLUSH_BATCH_SIZE: 20,
         }),
       );
       const layerBatchServer = HttpServer.serve(
@@ -367,46 +378,49 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     }),
   );
 
-  it.effect("does not send batch requests when telemetry is disabled", () =>
+  it.effect.each([
+    {},
+    {
+      T3CODE_TELEMETRY_ENABLED: "true",
+      T3CODE_POSTHOG_KEY: "official-key",
+      T3CODE_POSTHOG_HOST: "https://official.invalid",
+    },
+    { SIGMA_T3_TELEMETRY_ENABLED: "true" },
+  ])("does not read credentials or send requests without a complete fork opt-in: %j", (env) =>
     Effect.gen(function* () {
-      const capturedPaths: Array<string> = [];
-      const layerServerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-telemetry-disabled-",
+      const reads: string[] = [];
+      let requests = 0;
+      const client = HttpClient.make(() => {
+        requests++;
+        return Effect.die("unexpected analytics network access");
       });
-      const layerTelemetry = AnalyticsService.layer.pipe(Layer.provideMerge(layerServerConfig));
-      const layerConfig = ConfigProvider.layer(
-        ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: false,
-          T3CODE_POSTHOG_KEY: "phc_test_key",
-          T3CODE_POSTHOG_HOST: "http://localhost",
-        }),
-      );
-      const layerBatchServer = HttpServer.serve(
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          capturedPaths.push(request.url);
-          return HttpServerResponse.jsonUnsafe({});
-        }),
-      );
-      const layerRuntime = layerTelemetry.pipe(
-        Layer.provide(layerConfig),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HostProcess.Platform, "linux"),
-            Layer.succeed(HostProcess.Architecture, "arm64"),
-          ),
-        ),
-        Layer.provideMerge(NodeHttpServer.layerTest),
-      );
-
+      const config = yield* ServerConfig.ServerConfig;
       yield* Effect.gen(function* () {
-        yield* Layer.launch(layerBatchServer).pipe(Effect.forkScoped);
-        const analytics = yield* AnalyticsService.AnalyticsService;
-        yield* analytics.record("test.disabled", { index: 1 });
+        const analytics = yield* AnalyticsService.make;
+        yield* analytics.record("disabled");
+        yield* analytics.recordOwners([{ source: "connect", ownerId: "owner" }], "server");
         yield* analytics.flush;
-      }).pipe(Effect.provide(layerRuntime));
-
-      assert.deepEqual(capturedPaths, []);
-    }),
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(ServerConfig.ServerConfig, config),
+        Effect.provideService(HttpClient.HttpClient, client),
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.makeNoop({
+            readFileString: (path) => {
+              reads.push(path);
+              return Effect.die("unexpected analytics credential read");
+            },
+          }),
+        ),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+      );
+      assert.deepEqual(reads, []);
+      assert.equal(requests, 0);
+    }).pipe(
+      Effect.provide(
+        ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "sigma-telemetry-disabled-" }),
+      ),
+    ),
   );
 });

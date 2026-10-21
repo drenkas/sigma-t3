@@ -61,7 +61,10 @@ describe("remote helper lifecycle", () => {
           "#!/bin/sh\nprintf 'emulated webcam<N> none\\n' >&2\n",
           { mode: 0o755 },
         );
-        const root = NodePath.join(home, ".t3/device");
+        const official = NodePath.join(home, ".t3/device/keep.txt");
+        await NodeFSP.mkdir(NodePath.dirname(official), { recursive: true });
+        await NodeFSP.writeFile(official, "official device state");
+        const root = NodePath.join(home, ".sigma-t3/device");
         const hubDir = NodePath.join(root, `tools/expo-device-hub@${DEVICE_HUB_VERSION}`);
         const agentDir = NodePath.join(root, `tools/agent-device@${AGENT_DEVICE_VERSION}`);
         const hub = NodePath.join(hubDir, "node_modules/expo-device-hub/dist/server/cli.mjs");
@@ -234,6 +237,7 @@ else { const child=spawn(process.execPath,[path.join(path.dirname(process.argv[1
             await NodeFSP.readFile(NodePath.join(root, "hosts/one/stopped-agent"), "utf8"),
           ).toBe(String(upgradedDaemon.pid));
           expect(repaired.daemonPort).not.toBe(upgraded.daemonPort);
+          expect(await NodeFSP.readFile(official, "utf8")).toBe("official device state");
           const originalScript = remoteDeviceScript("one", "stop-agent");
           const upgradedStop = NodePath.join(home, "upgraded-stop.cjs");
           await NodeFSP.writeFile(
