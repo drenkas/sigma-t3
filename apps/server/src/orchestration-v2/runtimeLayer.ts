@@ -1,3 +1,7 @@
+import * as RepositoryTaskPolicy from "../repositoryTasks/RepositoryTaskPolicy.ts";
+import * as RepositoryTasks from "../repositoryTasks/RepositoryTasks.ts";
+import * as RepositoryTaskAdmission from "../repositoryTasks/RepositoryTaskAdmission.ts";
+import * as RepositoryTaskReactor from "../repositoryTasks/RepositoryTaskReactor.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -161,6 +165,11 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
   ),
 );
 
+const layerRepositoryTaskPolicy = RepositoryTaskPolicy.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerStores, layerProviderAdapterRegistryProvided, layerProjectService),
+  ),
+);
 const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -264,7 +273,12 @@ export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe
 const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
 );
+const layerTaskAdmission = RepositoryTaskAdmission.layer;
+const layerTaskWorkspaceObserver = RepositoryTaskAdmission.layerObserver.pipe(
+  Layer.provide(layerTaskAdmission),
+);
 const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
+  Layer.provide(layerTaskWorkspaceObserver),
   Layer.provide(
     Layer.mergeAll(
       layerProjectService,
@@ -275,6 +289,22 @@ const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
       IdAllocator.layer,
     ),
   ),
+);
+const layerRepositoryTasksProvided = RepositoryTasks.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerTaskAdmission,
+      layerThreadLaunchProvided,
+      layerThreadManagementProvided,
+      layerProjectService,
+      layerManagedProjectFoldersProvided,
+      layerCommandReceiptStoreProvided,
+      layerProviderAdapterRegistryProvided,
+    ),
+  ),
+);
+const layerRepositoryTaskReactorProvided = RepositoryTaskReactor.layer.pipe(
+  Layer.provide(Layer.merge(layerRepositoryTasksProvided, layerEventSinkProvided)),
 );
 const layerThreadLifecycleProvided = ThreadLifecycleService.layer.pipe(
   Layer.provide(layerThreadManagementProvided),
@@ -360,6 +390,9 @@ export const layer = Layer.mergeAll(
 );
 
 export const layerProduction = Layer.mergeAll(
+  layerRepositoryTaskPolicy,
+  layerRepositoryTasksProvided,
+  layerRepositoryTaskReactorProvided,
   layer.pipe(Layer.provide(layerProjectService)),
   layerProjectService,
   layerManagedProjectFoldersProvided,
@@ -382,5 +415,6 @@ export const layerProduction = Layer.mergeAll(
 ).pipe(
   Layer.provide(ResourceCleanupService.layer.pipe(Layer.provide(layerScheduledTaskProvided))),
   Layer.provide(Scheduler.layer),
+  Layer.provide(layerRepositoryTaskPolicy),
   Layer.provideMerge(layerEventInfrastructure),
 );

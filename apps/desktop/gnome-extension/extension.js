@@ -8,8 +8,8 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import { CaptureService, isWaylandSession } from "./captureService.js";
 import { CaptureFeedback } from "./captureFeedback.js";
 
-const NAME = "org.gnome.Shell.Extensions.T3SnapShot";
-const PATH = "/org/gnome/Shell/Extensions/T3SnapShot";
+const NAME = "org.gnome.Shell.Extensions.SigmaT3SnapShot";
+const PATH = "/org/gnome/Shell/Extensions/SigmaT3SnapShot";
 const XML = `<node><interface name="${NAME}">
   <property name="Version" type="u" access="read"/>
   <method name="Capture">

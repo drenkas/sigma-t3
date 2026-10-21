@@ -45,6 +45,7 @@ export class NpmLauncherCommandFailedError extends Schema.TaggedError<NpmLaunche
 export function npmLauncherPackageManifest(version: string) {
   return {
     name: NPM_LAUNCHER_PACKAGE_NAME,
+    private: true,
     version,
     description:
       "T3 Code CLI. Downloads the self-contained executable for this platform from the GitHub Release.",

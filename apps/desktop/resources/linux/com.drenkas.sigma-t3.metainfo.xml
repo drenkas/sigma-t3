@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.drenkas.sigma-t3</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Sigma T3</name>
+  <summary>Desktop GUI for coding agents</summary>
+  <developer id="com.drenkas">
+    <name>Dmytro Renkas</name>
+  </developer>
+  <description>
+    <p>
+      Sigma T3 is an open-source desktop app for coding agents. Work with your
+      existing agent subscriptions, review code changes, and run commands in
+      your projects.
+    </p>
+    <p>
+      Connect from desktop, web, or mobile to continue working remotely.
+    </p>
+  </description>
+  <launchable type="desktop-id">sigma-t3.desktop</launchable>
+  <icon type="stock">sigma-t3</icon>
+  <provides>
+    <binary>sigma-t3</binary>
+  </provides>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <url type="homepage">https://github.com/drenkas/sigma-t3</url>
+  <url type="bugtracker">https://github.com/drenkas/sigma-t3/issues</url>
+  <url type="vcs-browser">https://github.com/drenkas/sigma-t3</url>
+</component>

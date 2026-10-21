@@ -1,3 +1,4 @@
+import * as RepositoryTaskPolicy from "../../../repositoryTasks/RepositoryTaskPolicy.ts";
 import { MessageId, ThreadId, OrchestratorMcpFailure, ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -57,6 +58,17 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       Effect.gen(function* () {
         const context = yield* readCaller();
         const { caller } = context;
+        const policy = yield* Effect.serviceOption(RepositoryTaskPolicy.RepositoryTaskPolicy);
+        if (caller !== undefined && Option.isSome(policy))
+          yield* policy.value.assertStandaloneAllowed(caller).pipe(
+            Effect.mapError(
+              () =>
+                new OrchestratorMcpFailure({
+                  code: "invalid_request",
+                  message: "Repository task threads must use repository_task_dispatch.",
+                }),
+            ),
+          );
         const commandId = yield* newCommandId();
         const threadId = ThreadId.make(commandId);
         const messageId = MessageId.make(commandId);

@@ -1,6 +1,6 @@
 export const CLIENT_NAMES = [
-  "com.t3tools.T3Code.SnapShot",
-  "com.t3tools.T3Code.Development.SnapShot",
+  "com.drenkas.SigmaT3.SnapShot",
+  "com.drenkas.SigmaT3.Development.SnapShot",
 ];
 
 export function isWaylandSession(meta) {

@@ -91,6 +91,15 @@ describe("thread links", () => {
 });
 
 describe("link round trips", () => {
+  it.each([undefined, "", "   "])(
+    "builds an own deep link without a configured hosted origin (%j)",
+    (origin) => {
+      expect(buildNewThreadLink({ prompt: "Fix & verify", origin })).toBe(
+        "sigma-t3://new?prompt=Fix+%26+verify",
+      );
+    },
+  );
+
   it("builds a link that parses back to the same prompt", () => {
     const link = buildNewThreadLink({
       prompt: "Swear count & rating?",
@@ -99,7 +108,7 @@ describe("link round trips", () => {
       model: "opus",
     });
     const path = promptLinkAppPath(link);
-    expect(path).toBe(new URL(link).pathname + new URL(link).search);
+    expect(path).toBe("/new" + new URL(link).search);
     const parsed = parseNewThreadLink(new URL(link).search);
     expect(parsed.ok && parsed.value.kind === "new" && parsed.value.prompt.text).toBe(
       "Swear count & rating?",
@@ -107,20 +116,22 @@ describe("link round trips", () => {
   });
 
   it("maps app scheme and hosted links to in-app paths, and nothing else", () => {
-    expect(promptLinkAppPath("t3code://new?prompt=hi")).toBe("/new?prompt=hi");
-    expect(promptLinkAppPath("t3code-dev://threads/env-1/thread-1")).toBe("/env-1/thread-1");
-    expect(promptLinkAppPath("https://app.t3.codes/env-1/thread-1?prompt=go")).toBe(
-      "/env-1/thread-1?prompt=go",
-    );
+    expect(promptLinkAppPath("sigma-t3://new?prompt=hi")).toBe("/new?prompt=hi");
+    expect(promptLinkAppPath("sigma-t3-dev://threads/env-1/thread-1")).toBe("/env-1/thread-1");
+    expect(
+      promptLinkAppPath("https://fork.example/env-1/thread-1?prompt=go", "https://fork.example"),
+    ).toBe("/env-1/thread-1?prompt=go");
     expect(promptLinkAppPath("https://app.t3.codes/settings/general")).toBeNull();
+    expect(promptLinkAppPath("t3code://new?prompt=hi")).toBeNull();
+    expect(promptLinkAppPath("https://app.t3.codes/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
-    expect(promptLinkAppPath("t3code://app/index.html")).toBeNull();
+    expect(promptLinkAppPath("sigma-t3://app/index.html")).toBeNull();
   });
 
   it("hands an in-app path to the installed app", () => {
-    expect(promptLinkDeepLink("/new?prompt=hi")).toBe("t3code://new?prompt=hi");
+    expect(promptLinkDeepLink("/new?prompt=hi")).toBe("sigma-t3://new?prompt=hi");
     expect(promptLinkDeepLink("/env-1/thread-1?prompt=hi")).toBe(
-      "t3code://threads/env-1/thread-1?prompt=hi",
+      "sigma-t3://threads/env-1/thread-1?prompt=hi",
     );
   });
 });

@@ -52,13 +52,13 @@ it.effect("normalizes the hosted app URL to an absolute origin", () =>
   Effect.gen(function* () {
     assert.equal(
       yield* hostedAppUrlConfig.pipe(
-        provideEnv({ T3CODE_HOSTED_APP_URL: "https://nightly.app.t3.codes" }),
+        provideEnv({ SIGMA_T3_HOSTED_APP_URL: "https://nightly.app.t3.codes" }),
       ),
       "https://nightly.app.t3.codes",
     );
     assert.equal(
       yield* hostedAppUrlConfig.pipe(
-        provideEnv({ T3CODE_HOSTED_APP_URL: "http://localhost:5733" }),
+        provideEnv({ SIGMA_T3_HOSTED_APP_URL: "http://localhost:5733" }),
       ),
       "http://localhost:5733",
     );
@@ -74,7 +74,7 @@ it.effect("rejects malformed or insecure hosted app URLs", () =>
       "https://app.t3.codes?alias=true",
     ]) {
       const result = yield* hostedAppUrlConfig.pipe(
-        provideEnv({ T3CODE_HOSTED_APP_URL: value }),
+        provideEnv({ SIGMA_T3_HOSTED_APP_URL: value }),
         Effect.result,
       );
       assert.isTrue(Result.isFailure(result), value);

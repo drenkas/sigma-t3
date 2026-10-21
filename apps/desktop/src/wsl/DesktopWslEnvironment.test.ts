@@ -2,6 +2,10 @@
 import { describe, it } from "@effect/vitest";
 import { afterAll, expect } from "vite-plus/test";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -262,6 +266,32 @@ describe("WSL command deadlines", () => {
   );
 });
 
+it.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  "invalidates only the fork cache and preserves the official runtime marker",
+  () => {
+    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "sigma-wsl-namespace-"));
+    try {
+      const marker = ".t3code-wsl-runtime-ready";
+      const official = NodePath.join(home, ".t3", "wsl-runtime", "same-id", marker);
+      const own = NodePath.join(home, ".sigma-t3", "wsl-runtime", "same-id", marker);
+      for (const file of [official, own]) {
+        NodeFS.mkdirSync(NodePath.dirname(file), { recursive: true });
+        NodeFS.writeFileSync(file, "ready");
+      }
+      const result = NodeChildProcess.spawnSync("sh", ["-s"], {
+        input: buildWslRuntimeInvalidateScript("same-id"),
+        env: { HOME: home, PATH: "/usr/bin:/bin" },
+        encoding: "utf8",
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(NodeFS.existsSync(own)).toBe(false);
+      expect(NodeFS.readFileSync(official, "utf8")).toBe("ready");
+    } finally {
+      NodeFS.rmSync(home, { recursive: true, force: true });
+    }
+  },
+);
+
 describe("WSL runtime cache", () => {
   it.each([
     [
@@ -284,7 +314,7 @@ describe("WSL runtime cache", () => {
       "b".repeat(64),
     );
 
-    expect(script).toContain('runtime_parent="$HOME/.t3/wsl-runtime"');
+    expect(script).toContain('runtime_parent="$HOME/.sigma-t3/wsl-runtime"');
     expect(script).toContain('  [ -f "$ready_marker" ] &&');
     expect(script).toContain('    runtime_entry_runs "$runtime_root" 2>/dev/null &&');
     expect(script).toContain("if runtime_is_ready; then");
@@ -404,8 +434,8 @@ describe("WSL runtime cache", () => {
   });
 
   it("parses only absolute Linux runtime paths", () => {
-    expect(parseWslRuntimeRoot("runtimeRoot:/home/josh/.t3/wsl-runtime/1.2.3-x64\n")).toBe(
-      "/home/josh/.t3/wsl-runtime/1.2.3-x64",
+    expect(parseWslRuntimeRoot("runtimeRoot:/home/josh/.sigma-t3/wsl-runtime/1.2.3-x64\n")).toBe(
+      "/home/josh/.sigma-t3/wsl-runtime/1.2.3-x64",
     );
     expect(parseWslRuntimeRoot("runtimeRoot:relative/path\n")).toBeNull();
     expect(parseWslRuntimeRoot("noise\n")).toBeNull();
@@ -448,7 +478,9 @@ describe("WSL runtime cache", () => {
   it("invalidates a cache by dropping its ready marker, not the tree", () => {
     const script = buildWslRuntimeInvalidateScript("1.2.3/x64");
 
-    expect(script).toContain('rm -f "$HOME/.t3/wsl-runtime/1.2.3_x64/.t3code-wsl-runtime-ready"');
+    expect(script).toContain(
+      'rm -f "$HOME/.sigma-t3/wsl-runtime/1.2.3_x64/.t3code-wsl-runtime-ready"',
+    );
     expect(script).not.toContain("rm -rf");
   });
 });
@@ -496,9 +528,9 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
       archivePath,
       archiveSha,
       runtimeId,
-      runtimeParent: `${work}/home/.t3/wsl-runtime`,
-      runtimeRoot: `${work}/home/.t3/wsl-runtime/${runtimeId}`,
-      serverEntry: `${work}/home/.t3/wsl-runtime/${runtimeId}/t3`,
+      runtimeParent: `${work}/home/.sigma-t3/wsl-runtime`,
+      runtimeRoot: `${work}/home/.sigma-t3/wsl-runtime/${runtimeId}`,
+      serverEntry: `${work}/home/.sigma-t3/wsl-runtime/${runtimeId}/t3`,
       installScript,
       install: (archive?: string, sha?: string) => runShell(installScript(archive, sha)),
     };
@@ -721,6 +753,30 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     expect(leftovers.stdout.trim()).toBe("");
   });
 
+  it("install, prune and invalidation preserve official runtime caches", () => {
+    const fixture = createFixture();
+    const official = `${fixture.work}/home/.t3/wsl-runtime/${fixture.runtimeId}`;
+    const seeded = runShell(`set -eu
+mkdir -p ${sh(official)}
+printf ready > ${sh(`${official}/.t3code-wsl-runtime-ready`)}
+printf official > ${sh(`${official}/keep`)}
+`);
+    expect(seeded.status).toBe(0);
+    expect(fixture.install().status).toBe(0);
+    const result = runShell(
+      [
+        "set -eu",
+        `HOME=${sh(`${fixture.work}/home`)}`,
+        "export HOME",
+        buildWslRuntimePruneScript(fixture.runtimeId),
+        buildWslRuntimeInvalidateScript(fixture.runtimeId),
+        `test "$(cat ${sh(`${official}/keep`)})" = official`,
+        `test -f ${sh(`${official}/.t3code-wsl-runtime-ready`)}`,
+      ].join("\n"),
+    );
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("leases a warm cache across the prepare-to-spawn handoff", () => {
     const fixture = createFixture();
     expect(fixture.install().status).toBe(0);
@@ -800,7 +856,7 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
         "set -eu",
         "work=$(mktemp -d)",
         'home="$work/home"',
-        'runtime_parent="$home/.t3/wsl-runtime"',
+        'runtime_parent="$home/.sigma-t3/wsl-runtime"',
         'mkdir -p "$runtime_parent"',
         'make_ready() { mkdir -p "$runtime_parent/$1"; printf ready > "$runtime_parent/$1/.t3code-wsl-runtime-ready"; }',
         "make_ready sha256-current",

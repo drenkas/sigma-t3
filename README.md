@@ -1,4 +1,10 @@
-# T3 Code
+# Sigma T3
+
+Sigma T3 is the local-preview fork at [drenkas/sigma-t3](https://github.com/drenkas/sigma-t3), based on [T3 Code](https://github.com/pingdotgg/t3code). See [fork identity and local packaging](./docs/operations/sigma-fork.md) and [repository tasks](./docs/user/repository-tasks.md) for this fork's setup and features.
+
+The T3 Code installation commands, hosted services, mobile apps, and release links below are retained as **upstream reference**. They install or open official T3 Code, not Sigma T3; this fork currently uses local preview builds.
+
+## Upstream T3 Code reference
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
@@ -10,7 +16,7 @@ Nothing. We built T3 Code because we wanted the best possible development experi
 
 We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
 
-## Installation
+## Installation (upstream T3 Code)
 
 > [!WARNING]
 > T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:

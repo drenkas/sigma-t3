@@ -1,10 +1,11 @@
 {
   "name": "t3",
-  "version": "0.1.0",
+  "version": "0.1.0-preview.1",
+  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/t3code",
+    "url": "https://github.com/drenkas/sigma-t3",
     "directory": "apps/server"
   },
   "bin": {

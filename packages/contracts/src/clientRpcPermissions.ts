@@ -1,3 +1,4 @@
+import { REPOSITORY_TASK_METHODS } from "./repositoryTasks.ts";
 import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
@@ -13,6 +14,10 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [REPOSITORY_TASK_METHODS.groupsUpsert]: AuthOrchestrationOperateScope,
+  [REPOSITORY_TASK_METHODS.groupsDelete]: AuthOrchestrationOperateScope,
+  [REPOSITORY_TASK_METHODS.tasksCreate]: AuthOrchestrationOperateScope,
+  [REPOSITORY_TASK_METHODS.tasksStop]: AuthOrchestrationOperateScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,

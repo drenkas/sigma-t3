@@ -133,7 +133,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
           USERPROFILE: home,
           TMPDIR: scratch,
           TEMP: scratch,
-          T3CODE_HOME: home,
+          SIGMA_T3_HOME: home,
         },
         extendEnv: false,
       },

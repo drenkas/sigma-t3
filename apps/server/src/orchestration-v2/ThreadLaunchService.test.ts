@@ -1,3 +1,17 @@
+import * as Context from "effect/Context";
+import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
+import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as RunExecutionService from "./RunExecutionService.ts";
+import * as ContextHandoffService from "./ContextHandoffService.ts";
+import * as ProviderSessionManager from "./ProviderSessionManager.ts";
+import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as RepositoryTaskPolicy from "../repositoryTasks/RepositoryTaskPolicy.ts";
+import * as RepositoryTasks from "../repositoryTasks/RepositoryTasks.ts";
+import * as RepositoryTaskAdmission from "../repositoryTasks/RepositoryTaskAdmission.ts";
+import * as EventSink from "./EventSink.ts";
+import { EventId, type Project, type RepositoryTaskCreateInput } from "@t3tools/contracts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
@@ -117,6 +131,9 @@ const claudeAdapter = {
 } as ProviderAdapter.ProviderAdapterV2["Service"];
 
 interface HarnessOptions {
+  readonly projects?: ReadonlyArray<Project>;
+  readonly databaseLayer?: typeof SqlitePersistence.layerMemory;
+  readonly workspaceObserver?: Layer.Layer<never>;
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
   readonly adapters?: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]>;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
@@ -134,7 +151,7 @@ interface HarnessOptions {
 }
 
 function makeHarness(options: HarnessOptions = {}) {
-  const layerDatabase = SqlitePersistence.layerMemory;
+  const layerDatabase = options.databaseLayer ?? SqlitePersistence.layerMemory;
   const layerRegistry = ProviderAdapterRegistry.layerFromAdapters(options.adapters ?? [adapter]);
   const layerOrchestrator = ProviderReplayHarness.layerWithRegistry(
     { name: "thread-launch" },
@@ -143,11 +160,6 @@ function makeHarness(options: HarnessOptions = {}) {
   );
   const layerServerSettings = ServerSettings.layerTest(options.serverSettings);
   const layerReceipts = CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase));
-  const layerThreadManagement = ThreadManagement.layer.pipe(
-    Layer.provide(layerOrchestrator),
-    Layer.provide(layerServerSettings),
-    Layer.provide(layerReceipts),
-  );
   const layerOutbox = EffectOutbox.layer.pipe(Layer.provide(layerDatabase));
   const createWorktree = vi.fn(
     options.createWorktree ??
@@ -184,11 +196,13 @@ function makeHarness(options: HarnessOptions = {}) {
       delete: () => Effect.die("unused"),
       getById: (id) =>
         Effect.succeed(
-          id === projectId
-            ? Option.some(project)
-            : id === otherProjectId
-              ? Option.some(otherProject)
-              : Option.none(),
+          options.projects !== undefined
+            ? Option.fromNullishOr(options.projects.find((entry) => entry.id === id))
+            : id === projectId
+              ? Option.some(project)
+              : id === otherProjectId
+                ? Option.some(otherProject)
+                : Option.none(),
         ),
       getByWorkspaceRoot: () => Effect.succeed(Option.some(project)),
       snapshot: Effect.die("unused"),
@@ -224,7 +238,20 @@ function makeHarness(options: HarnessOptions = {}) {
         folderForThread: () => Effect.succeed(Option.none()),
       }),
   );
+  const layerThreadManagement = ThreadManagement.layer.pipe(
+    Layer.provide(layerOrchestrator),
+    Layer.provide(layerServerSettings),
+    Layer.provide(layerReceipts),
+    Layer.provide(
+      RepositoryTaskPolicy.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(layerDatabase, layerExternalServices, layerRegistry, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
   const layerLaunch = ThreadLaunch.layer.pipe(
+    Layer.provide(options.workspaceObserver ?? Layer.empty),
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
@@ -262,6 +289,7 @@ function makeHarness(options: HarnessOptions = {}) {
   );
   return {
     layer: Layer.mergeAll(
+      layerOrchestrator,
       layerLaunch,
       layerRegistry,
       layerThreadManagement,
@@ -3616,4 +3644,742 @@ it.effect.each(
         }
       }).pipe(Effect.provide(Layer.merge(harness.layer, layerService)));
     }),
+);
+
+const makeRepositoryTaskHarness = Effect.fn("test.makeRepositoryTaskHarness")(function* (
+  managedWorktree = false,
+  scratchUnavailable = false,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "repository-tasks-" });
+  const scratchId = ProjectId.make("project:task-scratch");
+  const scratchRoot = `${directory}/scratch`;
+  yield* fs.makeDirectory(scratchRoot);
+  const testProjects: Project[] = [
+    { ...project, workspaceRoot: `${directory}/first` },
+    { ...otherProject, workspaceRoot: `${directory}/second` },
+    { ...project, id: scratchId, workspaceRoot: scratchRoot },
+  ];
+  const layerGit = GitVcsDriver.layer.pipe(
+    Layer.provide(ServerConfig.layerTest(directory, { prefix: "repository-task-git-" })),
+    Layer.provide(NodeServices.layer),
+  );
+  for (const entry of testProjects.slice(0, 2)) {
+    yield* fs.makeDirectory(entry.workspaceRoot);
+    yield* GitVcsDriver.GitVcsDriver.use((git) =>
+      Effect.gen(function* () {
+        yield* git.execute({ operation: "test.init", cwd: entry.workspaceRoot, args: ["init"] });
+        yield* git.execute({
+          operation: "test.commit",
+          cwd: entry.workspaceRoot,
+          args: [
+            "-c",
+            "user.name=Sigma test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "fixture",
+          ],
+        });
+      }),
+    ).pipe(Effect.provide(layerGit));
+  }
+  const databaseLayer = SqlitePersistence.layerMemory;
+  const admission = RepositoryTaskAdmission.layer.pipe(
+    Layer.provide(Layer.mergeAll(databaseLayer, layerGit, NodeServices.layer)),
+  );
+  const provider: ServerProvider = {
+    instanceId: modelSelection.instanceId,
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    installed: true,
+    version: "test",
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: "2026-10-21T00:00:00.000Z",
+    slashCommands: [],
+    skills: [],
+    models: [
+      {
+        slug: modelSelection.model,
+        name: "Synthetic model",
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "reasoningEffort",
+              label: "Reasoning",
+              type: "select",
+              options: [{ id: "high", label: "High" }],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const managedFolders = Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+    namedProjectsRoot: scratchRoot,
+    isScratchProject: (id) => Effect.succeed(id === scratchId),
+    ensureScratchProject: scratchUnavailable
+      ? Effect.fail(new ManagedProjectFolders.ScratchUnavailableError())
+      : Effect.succeed({ projectId: scratchId }),
+    folderForThread: ({ projectId: id, threadId }) =>
+      id !== scratchId
+        ? Effect.succeedNone
+        : Effect.gen(function* () {
+            const path = `${scratchRoot}/${threadId}`;
+            yield* fs.makeDirectory(path, { recursive: true });
+            return Option.some(path);
+          }).pipe(Effect.orDie),
+  });
+  const native = makeHarness({
+    projects: testProjects,
+    databaseLayer,
+    providers: [provider],
+    managedFolders,
+    ...(managedWorktree
+      ? {
+          createWorktree: (input) =>
+            GitVcsDriver.GitVcsDriver.use((git) =>
+              git.createWorktree({
+                ...input,
+                path: `${directory}/server-home/worktrees/first/feature`,
+              }),
+            ).pipe(Effect.provide(layerGit), Effect.orDie),
+        }
+      : {}),
+    workspaceObserver: RepositoryTaskAdmission.layerObserver.pipe(
+      Layer.provide(admission),
+      Layer.orDie,
+    ),
+  });
+  const dependencies = Layer.mergeAll(
+    native.layer,
+    admission,
+    layerGit,
+    NodeServices.layer,
+    CommandReceiptStore.layer.pipe(Layer.provide(databaseLayer)),
+  );
+  const taskLayer = RepositoryTasks.layer.pipe(Layer.provide(dependencies));
+  const policy = RepositoryTaskPolicy.layer.pipe(Layer.provide(dependencies));
+  const input: RepositoryTaskCreateInput = {
+    id: "two-repositories",
+    groupId: "test-group",
+    title: "Fix both repositories",
+    prompt: "Make the bounded change in both repositories.",
+    coordinatorProjectId: projectId,
+    modelSelection,
+    roles: [
+      {
+        role: "implementation",
+        modelSelection: { ...modelSelection, options: [{ id: "reasoningEffort", value: "high" }] },
+      },
+    ],
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    members: [
+      { projectId, workspaceStrategy: { type: "root" } },
+      { projectId: otherProjectId, workspaceStrategy: { type: "root" } },
+    ],
+  };
+  return {
+    layer: Layer.mergeAll(dependencies, taskLayer, policy),
+    input,
+    testProjects,
+    databaseLayer,
+    directory,
+  };
+});
+
+it.effect(
+  "repository tasks preserve snapshots after group edits and deletion, and replay one native launch",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Original",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        assert.notEqual(task.snapshot.coordinatorWorkspaceProjectId, projectId);
+        const coordinator = yield* threads.getThreadProjection(task.snapshot.coordinatorThreadId);
+        assert.notEqual(coordinator.thread.worktreePath, harness.testProjects[0]!.workspaceRoot);
+        const dispatch = {
+          taskId: harness.input.id,
+          projectId,
+          role: "implementation" as const,
+          prompt: "Only first repository",
+        };
+        const first = yield* tasks.dispatch(dispatch, task.snapshot.coordinatorThreadId);
+        const replay = yield* tasks.dispatch(dispatch, task.snapshot.coordinatorThreadId);
+        assert.deepEqual(
+          replay.members.map((member) => member.snapshot.threadId),
+          first.members.map((member) => member.snapshot.threadId),
+        );
+        const member = first.members.find((entry) => entry.snapshot.projectId === projectId)!;
+        const native = yield* threads.getThreadProjection(member.snapshot.threadId);
+        assert.equal(native.messages.length, 1);
+        assert.deepEqual(native.thread.modelSelection.options, [
+          { id: "reasoningEffort", value: "high" },
+        ]);
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Changed",
+          projectIds: [otherProjectId],
+        });
+        yield* tasks.deleteGroup(harness.input.groupId);
+        const reopened = yield* tasks.create(harness.input);
+        assert.equal(reopened.snapshot.groupTitle, "Original");
+        assert.deepEqual(
+          reopened.snapshot.members.map((entry) => entry.projectId),
+          [projectId, otherProjectId],
+        );
+        assert.equal((yield* tasks.listGroups).length, 0);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each(["model", "option", "duplicate-role"] as const)(
+  "repository task model admission fails closed: %s",
+  (invalid) =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const selection =
+          invalid === "model"
+            ? { ...modelSelection, model: "not-advertised" }
+            : { ...modelSelection, options: [{ id: "reasoningEffort", value: "not-advertised" }] };
+        const roles: RepositoryTaskCreateInput["roles"] =
+          invalid === "duplicate-role"
+            ? [harness.input.roles[0]!, harness.input.roles[0]!]
+            : [{ role: "implementation", modelSelection: selection }];
+        const error = yield* tasks.create({ ...harness.input, roles }).pipe(Effect.flip);
+        assert.include(["invalid", "unavailable"], error.reason);
+        assert.equal((yield* tasks.listTasks).length, 0);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task Stop fences admission, cancels owned held turns, and leaves another thread alone",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        const dispatched = yield* tasks.dispatch(
+          { taskId: harness.input.id, projectId, role: "implementation", prompt: "First" },
+          task.snapshot.coordinatorThreadId,
+        );
+        const owned = dispatched.members.find((entry) => entry.snapshot.projectId === projectId)!;
+        yield* threads.sendToThread({
+          projectId,
+          threadId: owned.snapshot.threadId,
+          commandId: CommandId.make("queue:owned"),
+          messageId: MessageId.make("queue:owned"),
+          text: "Follow up",
+          attachments: [],
+          mode: "queue",
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const unrelated = yield* launches.launch(
+          launchInput({
+            command: "unrelated-launch",
+            thread: "unrelated-thread",
+            message: "Unrelated work",
+          }),
+        );
+        yield* tasks.stop(harness.input.id);
+        const stopped = yield* threads.getThreadProjection(owned.snapshot.threadId);
+        assert.isFalse(stopped.runs.some((run) => run.status === "queued"));
+        const independent = yield* threads.getThreadProjection(unrelated.threadId);
+        assert.isTrue(
+          independent.runs.some((run) => ["preparing", "queued", "starting"].includes(run.status)),
+        );
+        const denied = yield* tasks
+          .dispatch(
+            {
+              taskId: harness.input.id,
+              projectId: otherProjectId,
+              role: "implementation",
+              prompt: "Must not launch",
+            },
+            task.snapshot.coordinatorThreadId,
+          )
+          .pipe(Effect.flip);
+        assert.equal(denied.reason, "conflict");
+        assert.isNull(yield* threads.getThreadShell(task.snapshot.members[1]!.threadId));
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task recovery preserves uncertain launch intent without dispatching work",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const sql = yield* SqlClient.SqlClient;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        yield* sql`UPDATE repository_task_members SET launch_state = 'dispatching', role = 'implementation', prompt = 'intent before process loss' WHERE task_id = ${harness.input.id} AND project_id = ${projectId}`;
+        yield* tasks.recover;
+        yield* tasks.recover;
+        const recovered = yield* tasks.get(harness.input.id);
+        assert.equal(
+          recovered.members.find((member) => member.snapshot.projectId === projectId)!.launchState,
+          "uncertain",
+        );
+        assert.isNull(yield* threads.getThreadShell(task.snapshot.members[0]!.threadId));
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task results reach the coordinator once from both persisted native roots",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const sink = yield* EventSink.EventSinkV2;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        for (const member of task.snapshot.members) {
+          yield* tasks.dispatch(
+            {
+              taskId: harness.input.id,
+              projectId: member.projectId,
+              role: "implementation",
+              prompt: `Work in ${member.projectId}`,
+            },
+            task.snapshot.coordinatorThreadId,
+          );
+          yield* threads.streamStoredEventsFrom({ threadId: member.threadId }).pipe(
+            Stream.filter(
+              (stored) =>
+                stored.event.type === "run.updated" && stored.event.payload.status !== "preparing",
+            ),
+            Stream.runHead,
+          );
+          const projection = yield* threads.getThreadProjection(member.threadId);
+          const run = projection.runs[0]!;
+          const now = yield* DateTime.now;
+          // Synthetic provider output goes through the real event sink, never a fake receipt/store.
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make(`finished:${member.threadId}`),
+                threadId: member.threadId,
+                runId: run.id,
+                occurredAt: now,
+                type: "run.updated",
+                payload: { ...run, status: "completed", completedAt: now },
+              },
+              {
+                id: EventId.make(`answer:${member.threadId}`),
+                threadId: member.threadId,
+                runId: run.id,
+                occurredAt: now,
+                type: "message.updated",
+                payload: {
+                  ...projection.messages[0]!,
+                  id: MessageId.make(`answer:${member.threadId}`),
+                  role: "assistant",
+                  text: `RESULT ${member.projectId}`,
+                  streaming: false,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+              },
+            ],
+          });
+        }
+        yield* tasks.reconcile(harness.input.id);
+        yield* tasks.recover;
+        yield* tasks.reconcile(harness.input.id);
+        const coordinator = yield* threads.getThreadProjection(task.snapshot.coordinatorThreadId);
+        assert.equal(
+          coordinator.messages.filter((entry) => entry.text.includes("RESULT ")).length,
+          2,
+        );
+        const after = yield* tasks.get(harness.input.id);
+        assert.isTrue(after.members.every((member) => member.deliveryState === "delivered"));
+        assert.isTrue(
+          after.members.every(
+            (member) => member.preparedRevision !== null && member.workspacePath !== null,
+          ),
+        );
+        assert.equal(after.graph.edges.filter((edge) => edge.kind === "result").length, 2);
+        assert.notEqual(after.status, "completed");
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task delegation binds the exact snapshot role and rejects shared workspaces, escaped roots and stopped descendants",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const policy = yield* RepositoryTaskPolicy.RepositoryTaskPolicy;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        yield* tasks.dispatch(
+          { taskId: harness.input.id, projectId, role: "implementation", prompt: "First" },
+          task.snapshot.coordinatorThreadId,
+        );
+        const root = yield* threads.getThreadProjection(task.snapshot.members[0]!.threadId);
+        const run = root.runs.find((entry) => entry.rootNodeId !== null)!;
+        const nativeRequest = {
+          type: "delegated_task.request" as const,
+          commandId: CommandId.make("native-task-child"),
+          parentThreadId: root.thread.id,
+          parentRunId: run.id,
+          parentNodeId: run.rootNodeId!,
+          task: "Bounded native child",
+          role: "implementation",
+          modelSelection: harness.input.roles[0]!.modelSelection,
+          runtimeMode: harness.input.runtimeMode,
+          interactionMode: harness.input.interactionMode,
+          workspaceStrategy: {
+            type: "worktree" as const,
+            baseRef: task.snapshot.members[0]!.startingRevision,
+          },
+          createdBy: "user" as const,
+          creationSource: "web" as const,
+        };
+        for (const [index, invalid] of [
+          { ...nativeRequest, workspaceStrategy: undefined },
+          { ...nativeRequest, workspaceStrategy: { type: "root" as const } },
+          { ...nativeRequest, role: "unselected" },
+          { ...nativeRequest, modelSelection: { ...modelSelection, model: "unselected" } },
+          { ...nativeRequest, modelSelection },
+        ].entries()) {
+          const rejected = yield* threads
+            .dispatch({ ...invalid, commandId: CommandId.make(`invalid-native:${index}`) })
+            .pipe(Effect.provide(Context.empty()), Effect.flip);
+          assert.equal(rejected._tag, "OrchestratorCommandRejectedError");
+        }
+        const coordinatorProjection = yield* threads.getThreadProjection(
+          task.snapshot.coordinatorThreadId,
+        );
+        const coordinatorRun = coordinatorProjection.runs.find(
+          (entry) => entry.rootNodeId !== null,
+        )!;
+        assert.equal(
+          (yield* threads
+            .dispatch({
+              ...nativeRequest,
+              commandId: CommandId.make("invalid-coordinator-native"),
+              parentThreadId: coordinatorProjection.thread.id,
+              parentRunId: coordinatorRun.id,
+              parentNodeId: coordinatorRun.rootNodeId!,
+            })
+            .pipe(Effect.flip))._tag,
+          "OrchestratorCommandRejectedError",
+        );
+        assert.isEmpty((yield* threads.getThreadProjection(root.thread.id)).subagents);
+        yield* threads.dispatch(nativeRequest);
+        const accepted = (yield* threads.getThreadProjection(root.thread.id)).subagents[0]!;
+        assert.equal(accepted.role, "implementation");
+        const preparingChild = yield* threads.getThreadProjection(accepted.childThreadId!);
+        yield* ThreadLaunch.ThreadLaunchService.use((launches) =>
+          launches.prepareRun({
+            commandId: nativeRequest.commandId,
+            threadId: accepted.childThreadId!,
+            runId: preparingChild.runs[0]!.id,
+          }),
+        );
+        yield* threads.streamStoredEventsFrom({ threadId: accepted.childThreadId! }).pipe(
+          Stream.filter(
+            ({ event }) =>
+              event.type === "thread.metadata-updated" && event.payload.worktreePath != null,
+          ),
+          Stream.runHead,
+        );
+        const child = yield* threads.getThreadProjection(accepted.childThreadId!);
+        assert.deepEqual(child.thread.modelSelection, harness.input.roles[0]!.modelSelection);
+        assert.notEqual(child.thread.worktreePath, root.thread.worktreePath);
+        const delegated = yield* policy.prepareDelegation(root.thread, {
+          task: "Bounded child work",
+          role: "implementation",
+        });
+        assert.deepEqual(delegated.target, {
+          providerInstanceId: modelSelection.instanceId,
+          model: modelSelection.model,
+          options: [{ id: "reasoningEffort", value: "high" }],
+        });
+        assert.equal(delegated.isolation, "worktree");
+        for (const request of [
+          {
+            task: "Wrong model",
+            role: "implementation" as const,
+            target: { model: "not-selected" },
+          },
+          { task: "Wrong options", role: "implementation" as const, target: { options: [] } },
+          { task: "Shared writer", role: "implementation" as const, isolation: "shared" as const },
+        ])
+          assert.equal(
+            (yield* policy.prepareDelegation(root.thread, request).pipe(Effect.flip)).reason,
+            "conflict",
+          );
+        const unrelated = {
+          ...root.thread,
+          id: ThreadId.make("unrelated-writer"),
+          lineage: { ...root.thread.lineage, rootThreadId: ThreadId.make("unrelated-writer") },
+        };
+        assert.equal(
+          (yield* policy.assertMayStart(unrelated).pipe(Effect.flip)).reason,
+          "conflict",
+        );
+        const coordinator = yield* threads.getThreadProjection(task.snapshot.coordinatorThreadId);
+        assert.equal(
+          (yield* policy.assertStandaloneAllowed(coordinator.thread).pipe(Effect.flip)).reason,
+          "conflict",
+        );
+        assert.equal(
+          (yield* policy
+            .prepareDelegation(coordinator.thread, { task: "Escape ownership" })
+            .pipe(Effect.flip)).reason,
+          "conflict",
+        );
+        yield* tasks.stop(harness.input.id);
+        assert.equal(
+          (yield* policy.assertMayStart(root.thread).pipe(Effect.flip)).reason,
+          "conflict",
+        );
+        const admission = yield* RepositoryTaskAdmission.RepositoryTaskAdmission;
+        let released = false;
+        const deniedRelease = yield* admission
+          .beforeRelease(
+            root.thread.id,
+            harness.testProjects[0]!.workspaceRoot,
+            Effect.sync(() => {
+              released = true;
+            }),
+          )
+          .pipe(Effect.flip);
+        assert.equal(deniedRelease.reason, "conflict");
+        assert.isFalse(released);
+        const descendant = {
+          ...root.thread,
+          id: ThreadId.make("owned-descendant"),
+          lineage: {
+            ...root.thread.lineage,
+            parentThreadId: root.thread.id,
+            relationshipToParent: "subagent" as const,
+            rootThreadId: root.thread.id,
+          },
+        };
+        assert.equal(
+          (yield* policy.assertMayStart(descendant).pipe(Effect.flip)).reason,
+          "conflict",
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each([false, true])(
+  "repository task provider start refuses a redirected repository before worktree restoration: %s",
+  (managedWorktree) =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness(managedWorktree);
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const input = managedWorktree
+          ? {
+              ...harness.input,
+              members: harness.input.members.map((entry) =>
+                entry.projectId === projectId
+                  ? { ...entry, workspaceStrategy: { type: "worktree" as const, baseRef: "HEAD" } }
+                  : entry,
+              ),
+            }
+          : harness.input;
+        const task = yield* tasks.create(input);
+        yield* tasks.dispatch(
+          {
+            taskId: task.snapshot.id,
+            projectId,
+            role: "implementation",
+            prompt: "Stay in the snapshotted repository",
+          },
+          task.snapshot.coordinatorThreadId,
+        );
+        const threadId = task.snapshot.members[0]!.threadId;
+        yield* threads.streamStoredEventsFrom({ threadId }).pipe(
+          Stream.filter(
+            ({ event }) => event.type === "run.updated" && event.payload.status === "starting",
+          ),
+          Stream.runHead,
+        );
+        const initial = yield* threads.getThreadProjection(threadId);
+        const runId = initial.runs[0]!.id;
+        if (managedWorktree) {
+          const git = yield* GitVcsDriver.GitVcsDriver;
+          yield* git.execute({
+            operation: "test.remove-worktree",
+            cwd: harness.testProjects[0]!.workspaceRoot,
+            args: ["worktree", "remove", initial.thread.worktreePath!],
+          });
+          yield* git.execute({
+            operation: "test.same-branch-other-repo",
+            cwd: harness.testProjects[1]!.workspaceRoot,
+            args: ["branch", initial.thread.branch!],
+          });
+        }
+        harness.testProjects[0] = {
+          ...harness.testProjects[0]!,
+          workspaceRoot: harness.testProjects[1]!.workspaceRoot,
+        };
+        const open = vi.fn(() => Effect.die("Redirected task must not open a provider"));
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        const pruneWorktrees = vi.fn(() => Effect.void);
+        const recreateWorktree = vi.fn((input: Parameters<typeof git.createWorktree>[0]) =>
+          git.createWorktree(input),
+        );
+        const runtime = RuntimePolicy.layerFromProjectStore.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.mock(ProjectStore.ProjectStoreV2)({
+                get: (id) =>
+                  Effect.succeed(
+                    Option.fromNullishOr(
+                      harness.testProjects.find((entry) => entry.id === id),
+                    ).pipe(
+                      Option.map((entry) => ({
+                        ...entry,
+                        projectId: entry.id,
+                        autoPull: false,
+                        defaultThreadEnvMode: null,
+                        faviconPath: null,
+                        projectIcon: null,
+                      })),
+                    ),
+                  ),
+              }),
+              Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+                getInstance: () => Effect.succeed(undefined),
+              }),
+            ),
+          ),
+        );
+        const existingServices = Layer.succeedContext(
+          yield* Effect.context<Layer.Success<typeof harness.layer>>(),
+        );
+        const startLayer = Layer.fresh(ProviderTurnStart.layer).pipe(
+          Layer.provide(
+            Layer.mock(GitWorkflow.GitWorkflowService)({
+              pruneWorktrees,
+              createWorktree: recreateWorktree,
+            }),
+          ),
+          Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({ open })),
+          Layer.provide(runtime),
+          Layer.provide(ProjectionStore.layer.pipe(Layer.provide(existingServices))),
+          Layer.provide(
+            Layer.mergeAll(
+              existingServices,
+              ServerConfig.layerTest(harness.directory, `${harness.directory}/server-home`).pipe(
+                Layer.provide(NodeServices.layer),
+              ),
+              IdAllocator.layer,
+              Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
+              Layer.mock(ProviderAuthService.ProviderAuthService)({
+                tryHandlePromptCommand: () => Effect.succeed(false),
+              }),
+              Layer.mock(RunExecutionService.RunExecutionServiceV2)({
+                startRootRun: () => Effect.die("Redirected task must not start a turn"),
+              }),
+            ),
+          ),
+        );
+        yield* ProviderTurnStart.ProviderTurnStartServiceV2.use((starter) =>
+          starter.start({ threadId, runId }).pipe(Effect.provide(Context.empty())),
+        ).pipe(Effect.provide(startLayer));
+        assert.equal(open.mock.calls.length, 0);
+        assert.equal(pruneWorktrees.mock.calls.length, 0);
+        assert.equal(recreateWorktree.mock.calls.length, 0);
+        if (managedWorktree)
+          assert.isFalse(
+            yield* FileSystem.FileSystem.use((fs) => fs.exists(initial.thread.worktreePath!)),
+          );
+        assert.equal(
+          (yield* threads.getThreadProjection(threadId)).runs.find((entry) => entry.id === runId)
+            ?.status,
+          "failed",
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task reports unavailable Scratch before persisting a task or launching a provider",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness(false, true);
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const error = yield* tasks.create(harness.input).pipe(Effect.flip);
+        assert.equal(error.reason, "scratch-unavailable");
+        assert.include(error.message, "data directory outside a Git checkout");
+        assert.isEmpty(yield* tasks.listTasks);
+        assert.isNull(
+          yield* threads.getThreadShell(
+            ThreadId.make(`repository-task:${harness.input.id}:coordinator`),
+          ),
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
 );
