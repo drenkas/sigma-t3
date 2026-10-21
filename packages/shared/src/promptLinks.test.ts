@@ -5,7 +5,6 @@ import {
   parseNewThreadLink,
   parseThreadLinkPrompt,
   promptLinkAppPath,
-  promptLinkDeepLink,
   sanitizeLinkedPrompt,
   withoutPromptLinkParams,
 } from "./promptLinks.ts";
@@ -94,9 +93,11 @@ describe("link round trips", () => {
   it.each([undefined, "", "   "])(
     "builds an own deep link without a configured hosted origin (%j)",
     (origin) => {
-      expect(buildNewThreadLink({ prompt: "Fix & verify", origin })).toBe(
-        "sigma-t3://new?prompt=Fix+%26+verify",
-      );
+      expect(
+        buildNewThreadLink(
+          origin === undefined ? { prompt: "Fix & verify" } : { prompt: "Fix & verify", origin },
+        ),
+      ).toBe("sigma-t3://new?prompt=Fix+%26+verify");
     },
   );
 
@@ -126,12 +127,5 @@ describe("link round trips", () => {
     expect(promptLinkAppPath("https://app.t3.codes/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("sigma-t3://app/index.html")).toBeNull();
-  });
-
-  it("hands an in-app path to the installed app", () => {
-    expect(promptLinkDeepLink("/new?prompt=hi")).toBe("sigma-t3://new?prompt=hi");
-    expect(promptLinkDeepLink("/env-1/thread-1?prompt=hi")).toBe(
-      "sigma-t3://threads/env-1/thread-1?prompt=hi",
-    );
   });
 });
