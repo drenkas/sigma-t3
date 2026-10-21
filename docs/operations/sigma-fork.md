@@ -8,6 +8,10 @@ The macOS application is **Sigma T3**, bundle ID `com.drenkas.sigma-t3`. Product
 
 Local/manual pairing is the supported connection mode. Hosted Connect has no default endpoint or provisioned OAuth/relay configuration. Do not copy upstream `.env` files, Clerk keys, telemetry, or hosted credentials. Direct provider login retains its existing validation and uses the fork's callback scheme.
 
+## Fork schema and upstream merges
+
+Fork tables migrate through `apps/server/src/persistence/SigmaMigrations.ts`, recorded in `sigma_sql_migrations`. Never add fork migrations to upstream's `Migrations.ts`: the migrator skips every id up to the highest recorded one, so a fork id there makes upstream's next migration refuse to start. Fork fields inside upstream schemas (the optional `role` on subagents and delegated tasks) are the places most likely to conflict when upstream changes the same shape; resolve them by keeping both.
+
 ## Build an isolated macOS arm64 preview
 
 From a clean owned checkout with locked dependencies:
