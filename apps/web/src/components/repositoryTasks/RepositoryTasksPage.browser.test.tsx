@@ -15,6 +15,9 @@ const state = vi.hoisted(() => ({
   commandInputs: [] as unknown[],
   projects: [] as unknown[],
   groups: [] as unknown[],
+  detail: {} as Record<string, unknown>,
+  commandAtoms: [] as unknown[],
+  commandSucceeds: false,
 }));
 
 vi.mock(import("~/state/environments"), async (original) => ({
@@ -48,7 +51,7 @@ vi.mock(import("~/state/query"), async (original) => ({
   useEnvironmentQuery: ((atom: unknown) => {
     state.queryInputs.push(atom);
     return {
-      data: atom === null ? null : { groups: state.groups, tasks: [] },
+      data: atom === null ? null : { groups: state.groups, tasks: [], ...state.detail },
       dataUpdatedAt: 0,
       failure: null,
       isSuccess: true,
@@ -60,21 +63,69 @@ vi.mock(import("~/state/query"), async (original) => ({
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
-  useAtomCommand: (() => async (input: unknown) => {
+  useAtomCommand: ((atom: unknown) => async (input: unknown) => {
     state.commandRuns++;
     state.commandInputs.push(input);
-    throw new Error("A disabled command must not run");
+    state.commandAtoms.push(atom);
+    if (!state.commandSucceeds) throw new Error("A disabled command must not run");
+    return { _tag: "Success", value: state.detail };
   }) as never,
 }));
+
+function setup() {
+  state.detail = {};
+  state.commandAtoms = [];
+  state.commandSucceeds = false;
+}
 
 function replaceProviderCatalog() {
   state.providerMap = new Map([[state.environmentId, state.providers]]);
 }
 
+import { repositoryTaskEnvironment } from "../../state/repositoryTasks";
 import { RepositoryTasksPage } from "./RepositoryTasksPage";
+
+function taskDetail(state: string, launchState: string, archivedAt: string | null = null) {
+  return {
+    snapshot: {
+      id: "task-a",
+      title: "Two repositories",
+      groupTitle: "Group",
+      coordinatorThreadId: "repository-task:task-a:coordinator",
+      coordinatorWorkspaceProjectId: "scratch",
+      modelSelection: { instanceId: "codex", model: "first-model" },
+      members: [],
+    },
+    state,
+    status: state === "uncertain" ? "uncertain" : "stopped",
+    coordinatorStatus: "completed",
+    archivedAt,
+    members: [
+      {
+        snapshot: {
+          projectId: "project-a",
+          threadId: "repository-task:task-a:member:0",
+          workspaceRoot: "/work/project-a",
+          workspaceStrategy: { type: "root" },
+        },
+        role: "implementation",
+        launchState,
+        status: launchState,
+        runId: null,
+        workspacePath: null,
+        branch: null,
+        preparedRevision: null,
+        pendingApproval: false,
+        deliveryState: "pending",
+      },
+    ],
+    graph: { nodes: [], edges: [] },
+  };
+}
 
 describe("RepositoryTasksPage capability guard", () => {
   it("keeps repository task requests and mutations disabled for older hosts", async () => {
+    setup();
     state.queryInputs = [];
     state.commandRuns = 0;
     state.commandInputs = [];
@@ -97,6 +148,7 @@ describe("RepositoryTasksPage capability guard", () => {
   });
 
   it("hands host selection to route state so reload and back keep the chosen destination", async () => {
+    setup();
     const onTaskChange = vi.fn();
     await using screen = await render(
       <RepositoryTasksPage
@@ -121,6 +173,7 @@ describe("RepositoryTasksPage capability guard", () => {
   });
 
   it("keeps a removed coordinator model selection unavailable and prevents task creation", async () => {
+    setup();
     state.queryInputs = [];
     state.commandRuns = 0;
     state.commandInputs = [];
@@ -207,6 +260,7 @@ describe("RepositoryTasksPage capability guard", () => {
   });
 
   it("does not implicitly select a model when the catalog order changes", async () => {
+    setup();
     state.queryInputs = [];
     state.commandRuns = 0;
     state.commandInputs = [];
@@ -271,6 +325,7 @@ describe("RepositoryTasksPage capability guard", () => {
   });
 
   it("blocks task creation while repository group edits are unsaved", async () => {
+    setup();
     state.queryInputs = [];
     state.commandRuns = 0;
     state.commandInputs = [];
@@ -328,6 +383,7 @@ describe("RepositoryTasksPage capability guard", () => {
   });
 
   it("clears stale options when the full provider descriptor disappears", async () => {
+    setup();
     state.queryInputs = [];
     state.commandRuns = 0;
     state.commandInputs = [];
@@ -425,5 +481,42 @@ describe("RepositoryTasksPage capability guard", () => {
       (state.commandInputs[0] as { input: { roles: Array<{ modelSelection: ModelSelection }> } })
         .input.roles[0]?.modelSelection.options,
     ).toBeUndefined();
+  });
+
+  it("settles an uncertain task only through acknowledgement, then offers archive instead of Stop", async () => {
+    setup();
+    state.queryInputs = [];
+    state.commandRuns = 0;
+    state.commandInputs = [];
+    state.commandSucceeds = true;
+    state.capability = true;
+    state.providers = [];
+    replaceProviderCatalog();
+    state.projects = [];
+    state.groups = [];
+    state.detail = taskDetail("uncertain", "uncertain");
+    await using screen = await render(
+      <RepositoryTasksPage taskId="task-a" onTaskChange={() => {}} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Acknowledge observed state" }));
+    expect(state.commandAtoms).toEqual([repositoryTaskEnvironment.acknowledgeTask]);
+    expect(state.commandInputs).toEqual([
+      { environmentId: state.environmentId, input: { taskId: "task-a" } },
+    ]);
+
+    state.detail = taskDetail("stopped", "abandoned");
+    await screen.rerender(<RepositoryTasksPage taskId="task-a" onTaskChange={() => {}} />);
+    await expect
+      .element(screen.getByRole("button", { name: "Acknowledge observed state" }))
+      .not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "Stop task" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(state.commandAtoms.at(-1)).toBe(repositoryTaskEnvironment.archiveTask);
+
+    state.detail = taskDetail("stopped", "abandoned", "2026-10-21T12:00:00.000Z");
+    await screen.rerender(<RepositoryTasksPage taskId="task-a" onTaskChange={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+    expect(state.commandAtoms.at(-1)).toBe(repositoryTaskEnvironment.unarchiveTask);
   });
 });
