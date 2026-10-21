@@ -6,6 +6,8 @@
 
 Потрібні Node.js, Git та GitHub CLI `gh` з автентифікованим доступом до `drenkas/sigma-t3`. `origin` має точно вказувати на `https://github.com/drenkas/sigma-t3.git`, а `upstream` — на `https://github.com/pingdotgg/t3code.git`. Помічник відхиляє інші адреси remote.
 
+Кожна змінювальна команда потребує стабільного ідентифікатора власника сесії. Helper бере перший заданий із `SIGMA_SYNC_OWNER`, `CODEX_THREAD_ID` (Codex) і `CLAUDE_CODE_SESSION_ID` (Claude Code): 8–128 латинських літер, цифр, `_` або `-`. Для запуску поза агентом, наприклад із запланованої задачі, задайте власний: `export SIGMA_SYNC_OWNER=nightly-sync-$(date +%Y%m%d)`. Тримайте одне значення на весь запуск: інший власник не зможе продовжити сесію без `recover --owner-dead`.
+
 Запускайте команди з будь-якого worktree цього checkout:
 
 ```sh
@@ -13,7 +15,9 @@ node scripts/sigma-upstream-sync.mjs prepare
 node scripts/sigma-upstream-sync.mjs status
 ```
 
-`prepare` оновлює лише refs `origin/main` і `upstream/main`. Якщо upstream уже є предком `origin/main`, команда записує `no-updates`. Інакше вона створює або відновлює гілку `sigma-upstream/<upstream-sha>` у worktree `<git-common-dir>/sigma-upstream-sync/worktrees/<upstream-sha>` та звичайним Git merge додає upstream до знімка `origin/main`.
+`prepare` оновлює лише refs `origin/main` і `upstream/main`. Якщо upstream уже є предком `origin/main`, команда записує `no-updates`. Інакше вона створює або відновлює гілку `sigma-upstream/<upstream-sha>` у worktree `<checkout>-sync/<upstream-sha>` поруч з основним checkout (для `~/Projects/sigma-t3` це `~/Projects/sigma-t3-sync/<sha>`) та звичайним Git merge додає upstream до знімка `origin/main`. Worktree лежить поза Git-dir, бо vitest і `vp lint` виключають `**/.git/**`. Запуски, які журнал уже записав зі старим шляхом `<git-common-dir>/sigma-upstream-sync/worktrees/<sha>`, продовжуються там.
+
+Запуск закріплює свій upstream SHA: незавершений запуск не перемикається на новіший `upstream/main`, бо upstream змінюється частіше, ніж встигають пройти перевірки. Якщо upstream уже пішов далі, `prepare` додає до результату `latestUpstreamSha`. Новіший upstream підхопить наступний запуск після закриття або злиття PR.
 
 Успішний `prepare` повертає приватний nonce сесії (`sessionId`). Збережіть його в контексті поточного запуску. Каталог lock утримується від `prepare` до передачі відкритого PR на людський перегляд; інша сесія не може приєднатися до нього. `status` не показує nonce. Кожна змінювальна команда перевіряє власника та 60-хвилинний строк сесії. Мережеві Git/GitHub-команди мають тайм-аут 120 секунд.
 
@@ -30,15 +34,15 @@ node scripts/sigma-upstream-sync.mjs record-validation --session-id "$SYNC_SESSI
 node scripts/sigma-upstream-sync.mjs publish-pr --session-id "$SYNC_SESSION_ID" --body-file /path/to/pr-body.md
 ```
 
-PR має містити короткий опис інтегрованих змін, SHA `upstream/main` та фактичні команди перевірок із результатами. `record-validation` фіксує чистий `HEAD`; це декларація агента про виконані перевірки, а не автоматичний запуск тестів. `publish-pr` повторно звіряє refs, чистоту worktree та SHA перевірки, перед push перевіряє віддалену гілку й наявні PR, а тоді створює або оновлює єдиний PR для цього upstream SHA.
+PR має містити короткий опис інтегрованих змін, SHA `upstream/main` та фактичні команди перевірок із результатами. `record-validation` фіксує чистий `HEAD`; це декларація агента про виконані перевірки, а не автоматичний запуск тестів. `publish-pr` повторно звіряє `origin/main`, чистоту worktree та SHA перевірки, перед push перевіряє віддалену гілку й наявні PR, а тоді створює або оновлює єдиний PR для цього upstream SHA. Якщо push не вдався, помилка містить хвіст stderr від `git push`. Коли merge змінює `.github/workflows/*`, GitHub відхиляє push токеном без scope `workflow`; helper розпізнає це й підказує виконати `gh auth refresh -h github.com -s workflow`, після чого повторіть `publish-pr`.
 
 ## Відновлення та обмеження
 
-Журнал атомарно зберігається у `<git-common-dir>/sigma-upstream-sync/journal.json`. Він містить SHA основи й upstream, гілку, worktree, фазу, перевірений SHA та URL PR. `status` лише читає цей журнал. Сесійний lock і короткий mutex зберігаються як атомарні compare-and-swap Git refs під `refs/sigma-upstream-sync/`; вони не створюють ownerless проміжного стану. Mutex можна перехопити лише після підтвердження завершення його PID на цьому хості, через атомарне порівняння старого ref. Якщо його власник на іншому хості або стан неможливо підтвердити, операція зупиниться. Якщо основна гілка fork або upstream змінилася після перевірок, помічник очищає `testedSha` і відмовляється публікувати застарілий доказ. Повторіть `prepare`, розв’яжіть merge за потреби й виконайте перевірки заново.
+Журнал атомарно зберігається у `<git-common-dir>/sigma-upstream-sync/journal.json`. Він містить SHA основи й upstream, гілку, worktree, фазу, перевірений SHA та URL PR. `status` лише читає цей журнал. Сесійний lock і короткий mutex зберігаються як атомарні compare-and-swap Git refs під `refs/sigma-upstream-sync/`; вони не створюють ownerless проміжного стану. Mutex можна перехопити лише після підтвердження завершення його PID на цьому хості, через атомарне порівняння старого ref. Якщо його власник на іншому хості або стан неможливо підтвердити, операція зупиниться. Якщо основна гілка fork змінилася після перевірок, помічник очищає `testedSha` і відмовляється публікувати застарілий доказ. Новий коміт у `upstream/main` доказ не скасовує. Повторіть `prepare`, розв’яжіть merge за потреби й виконайте перевірки заново.
 
 Push без підтвердженого результату та невизначене створення PR відновлюються повторною командою після явного `recover`: спершу helper читає віддалену гілку й список PR. Push вказує на незмінний перевірений SHA, а не на рухоме локальне посилання.
 
-Якщо Codex-запуск аварійно завершився або сесія минула, не видаляйте lock вручну. Спочатку перевірте, що попередній Codex task завершений, а потім запустіть явне відновлення. Команда звірить refs, віддалену гілку й PR; при невизначеному чи розбіжному стані вона зупиниться для ручного розгляду:
+Якщо агентський запуск аварійно завершився або сесія минула, не видаляйте lock вручну. Спочатку перевірте, що попередній власник сесії завершився, а потім запустіть явне відновлення. Команда звірить refs, віддалену гілку й PR; при невизначеному чи розбіжному стані вона зупиниться для ручного розгляду:
 
 ```sh
 node scripts/sigma-upstream-sync.mjs recover --owner-dead

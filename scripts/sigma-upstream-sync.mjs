@@ -95,6 +95,16 @@ function locate() {
   return { root, commonDir, stateDir: path.join(commonDir, "sigma-upstream-sync") };
 }
 
+// Sync worktrees live beside the main checkout (`<checkout>-sync/<sha>`), not under
+// the Git dir: vitest and lint exclude `**/.git/**`, so checks could not run there.
+// Runs journaled earlier keep their recorded path.
+function worktreesDir(stateDir) {
+  const gitDir = commonDir(stateDir);
+  const checkout =
+    path.basename(gitDir) === ".git" ? path.dirname(gitDir) : gitDir.replace(/\.git$/, "");
+  return `${checkout}-sync`;
+}
+
 function loadJournal(stateDir) {
   const file = path.join(stateDir, "journal.json");
   if (!existsSync(file)) return { version: 1, activeRunId: null, runs: {} };
@@ -179,11 +189,19 @@ function releaseLock(stateDir, ref, expectedObjectId) {
   return result.status === 0;
 }
 
-function threadId() {
-  const value = process.env.CODEX_THREAD_ID;
-  if (!value || !/^[a-zA-Z0-9_-]{8,128}$/.test(value))
-    throw new Error("CODEX_THREAD_ID is required to claim a sync session.");
-  return value;
+// The owner must outlive a single command and stay distinct per agent task, so
+// recovery can tell a live owner from an ended one. Agent harnesses set these.
+const OWNER_ENV = ["SIGMA_SYNC_OWNER", "CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID"];
+
+function syncOwner() {
+  const name = OWNER_ENV.find((key) => process.env[key]);
+  if (!name)
+    throw new Error(
+      `Set SIGMA_SYNC_OWNER to a stable id for this task to claim a sync session (${OWNER_ENV.slice(1).join(" and ")} are used when present).`,
+    );
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(process.env[name]))
+    throw new Error(`${name} must be 8-128 characters of letters, digits, "_" or "-".`);
+  return process.env[name];
 }
 
 function claimSession(stateDir, ownerThread, runId) {
@@ -289,7 +307,7 @@ function assertWorktree(run) {
 }
 
 function prepare(root, stateDir, journal, assertCurrent) {
-  const { baseSha, upstreamSha } = fetchHeads(root);
+  const { baseSha, upstreamSha: latestUpstreamSha } = fetchHeads(root);
   for (const previous of Object.values(journal.runs)) {
     if (TERMINAL_PHASES.has(previous.phase) || !previous.branch) continue;
     const unresolvedPublication =
@@ -340,6 +358,17 @@ function prepare(root, stateDir, journal, assertCurrent) {
       previous.lastPrLookup = { state: "absent", at: new Date().toISOString() };
     }
   }
+  // An unfinished run keeps its upstream target; a newer upstream waits for the
+  // next run, after this one's PR closes.
+  const unfinished = Object.values(journal.runs).find(
+    (candidate) => candidate.runId === journal.activeRunId,
+  );
+  const upstreamSha =
+    unfinished?.branch && !TERMINAL_PHASES.has(unfinished.phase)
+      ? unfinished.upstreamSha
+      : latestUpstreamSha;
+  const pinned = (result) =>
+    upstreamSha === latestUpstreamSha ? result : { ...result, latestUpstreamSha };
   if (isAncestor(root, upstreamSha, baseSha)) {
     let run = journal.runs[upstreamSha];
     if (!run) {
@@ -361,7 +390,7 @@ function prepare(root, stateDir, journal, assertCurrent) {
     }
     journal.activeRunId = run.runId;
     saveJournal(stateDir, journal);
-    return { result: "no-updates", run };
+    return pinned({ result: "no-updates", run });
   }
 
   let run = journal.runs[upstreamSha];
@@ -381,7 +410,7 @@ function prepare(root, stateDir, journal, assertCurrent) {
       previous.testedSha = null;
     }
     const branch = `sigma-upstream/${upstreamSha}`;
-    const worktree = path.join(stateDir, "worktrees", upstreamSha);
+    const worktree = path.join(worktreesDir(stateDir), upstreamSha);
     run = {
       runId: randomUUID(),
       baseSha,
@@ -484,7 +513,7 @@ function prepare(root, stateDir, journal, assertCurrent) {
   run.phase = "ready-for-validation";
   run.testedSha = null;
   saveJournal(stateDir, journal);
-  return { result: "ready-for-validation", run };
+  return pinned({ result: "ready-for-validation", run });
 }
 
 function activeRun(journal) {
@@ -505,13 +534,15 @@ function recordValidation(root, stateDir, journal) {
       `Run ${run.runId} is ${run.phase}; prepare and resolve all merges before recording validation.`,
     );
   }
+  // Upstream moves faster than validation, so the run keeps its pinned upstream
+  // and only a moved origin/main invalidates the proof.
   const heads = fetchHeads(root);
-  if (heads.baseSha !== run.baseSha || heads.upstreamSha !== run.upstreamSha) {
+  if (heads.baseSha !== run.baseSha) {
     run.testedSha = null;
     run.phase = "stale";
     saveJournal(stateDir, journal);
     throw new Error(
-      "origin/main or upstream/main moved; validation proof was invalidated. Run prepare and repeat the required checks.",
+      "origin/main moved; validation proof was invalidated. Run prepare and repeat the required checks.",
     );
   }
   assertWorktree(run);
@@ -623,12 +654,21 @@ function ensurePushed(root, run, testedSha, assertCurrent) {
     allowFailure: true,
   });
   const after = remoteBranchSha(root, run.branch);
-  if (after !== testedSha) {
+  if (after === testedSha) return;
+  const detail = pushed.stderr.trim().split("\n").slice(-8).join("\n");
+  if (pushed.status !== 0 && /without [`'"]?workflow[`'"]? scope/i.test(detail)) {
     throw new Error(
-      `Push outcome is not confirmed for ${run.branch}; remote now points to ${after ?? "no branch"}. Re-run publish-pr to reconcile before retrying.`,
+      `GitHub rejected the push of ${run.branch}: the merge changes .github/workflows and the GitHub token lacks the workflow scope. Run \`gh auth refresh -h github.com -s workflow\`, then re-run publish-pr.\n${detail}`,
     );
   }
-  if (pushed.status !== 0) return;
+  if (pushed.status !== 0) {
+    throw new Error(
+      `git push of ${run.branch} failed (${pushed.status}); remote points to ${after ?? "no branch"}.${detail ? `\n${detail}` : ""}`,
+    );
+  }
+  throw new Error(
+    `Push outcome is not confirmed for ${run.branch}; remote now points to ${after ?? "no branch"}. Re-run publish-pr to reconcile before retrying.`,
+  );
 }
 
 function publishPullRequest(root, stateDir, journal, bodyFile, assertCurrent) {
@@ -643,12 +683,12 @@ function publishPullRequest(root, stateDir, journal, bodyFile, assertCurrent) {
   const existingPr = reconcileExistingPullRequest(root, stateDir, journal, run);
   if (existingPr) return existingPr;
   const heads = fetchHeads(root);
-  if (heads.baseSha !== run.baseSha || heads.upstreamSha !== run.upstreamSha) {
+  if (heads.baseSha !== run.baseSha) {
     run.testedSha = null;
     run.phase = "stale";
     saveJournal(stateDir, journal);
     throw new Error(
-      "origin/main or upstream/main moved; validation proof was invalidated. Run prepare and repeat the required checks.",
+      "origin/main moved; validation proof was invalidated. Run prepare and repeat the required checks.",
     );
   }
   assertWorktree(run);
@@ -792,7 +832,7 @@ function parseArgs(args) {
   }
   if (commandName === "recover" && !options.ownerDead)
     throw new Error(
-      "recover requires --owner-dead after confirming the prior Codex task has ended.",
+      "recover requires --owner-dead after confirming the prior owner task has ended.",
     );
   if (commandName !== "recover" && options.ownerDead)
     throw new Error("--owner-dead is only valid with recover.");
@@ -847,7 +887,7 @@ function recover(root, stateDir, journal, ownerThread) {
   const oldOwner = sessionOwner(stateDir);
   if (oldOwner?.ownerThread === ownerThread && Date.now() <= oldOwner.deadline)
     throw new Error(
-      "This Codex task still owns the session; continue with prepare or record-validation.",
+      "This owner still holds the session; continue with prepare or record-validation.",
     );
   if (oldOwner && (!oldOwner.sessionId || !oldOwner.ownerThread))
     throw new Error("The session owner record is corrupt; inspect the lock before recovery.");
@@ -886,7 +926,7 @@ function recover(root, stateDir, journal, ownerThread) {
     if (oldOwner) releaseSession(stateDir, oldOwner.ownerThread, oldOwner.sessionId);
     return { result: run.phase, run };
   }
-  if (heads.baseSha !== run.baseSha || heads.upstreamSha !== run.upstreamSha) {
+  if (heads.baseSha !== run.baseSha) {
     run.testedSha = null;
     run.phase = "stale";
     saveJournal(stateDir, journal);
@@ -896,7 +936,7 @@ function recover(root, stateDir, journal, ownerThread) {
       result: "stale",
       run,
       sessionId,
-      message: "Remote refs moved; run prepare to reconcile and repeat validation.",
+      message: "origin/main moved; run prepare to reconcile and repeat validation.",
     };
   }
   if (oldOwner) releaseSession(stateDir, oldOwner.ownerThread, oldOwner.sessionId);
@@ -920,7 +960,7 @@ function main() {
     return;
   }
 
-  const ownerThread = threadId();
+  const ownerThread = syncOwner();
   withMutationMutex(stateDir, () => {
     const journal = loadJournal(stateDir);
     if (commandName === "recover") {
