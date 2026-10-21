@@ -25,7 +25,10 @@ describe("Sigma migrations", () => {
       yield* runMigrations();
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [[1, "RepositoryTasks"]],
+        sigma: [
+          [1, "RepositoryTasks"],
+          [2, "RepositoryTaskArchive"],
+        ],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -42,7 +45,10 @@ describe("Sigma migrations", () => {
 
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [[1, "RepositoryTasks"]],
+        sigma: [
+          [1, "RepositoryTasks"],
+          [2, "RepositoryTaskArchive"],
+        ],
       });
       const groups = yield* sql<{ readonly id: string }>`SELECT id FROM repository_groups`;
       assert.deepStrictEqual(

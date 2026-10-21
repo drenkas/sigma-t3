@@ -67,6 +67,7 @@ export const RepositoryTaskSnapshot = Schema.Struct({
 });
 export type RepositoryTaskSnapshot = typeof RepositoryTaskSnapshot.Type;
 export const RepositoryTaskIdInput = Schema.Struct({ taskId: Id });
+export const RepositoryTaskListInput = Schema.Struct({ archived: Schema.optional(Schema.Boolean) });
 export const RepositoryTaskDispatchInput = Schema.Struct({
   taskId: Id,
   projectId: ProjectId,
@@ -94,7 +95,8 @@ export const RepositoryTaskGraphEdge = Schema.Struct({
 export const RepositoryTaskMember = Schema.Struct({
   snapshot: RepositoryTaskMemberSnapshot,
   role: Schema.NullOr(Schema.String),
-  launchState: Schema.Literals(["pending", "dispatching", "dispatched", "uncertain"]),
+  // "abandoned": an uncertain launch the user acknowledged as never having started.
+  launchState: Schema.Literals(["pending", "dispatching", "dispatched", "uncertain", "abandoned"]),
   status: Schema.String,
   runId: Schema.NullOr(RunId),
   workspacePath: Schema.NullOr(Schema.String),
@@ -118,6 +120,7 @@ export const RepositoryTask = Schema.Struct({
     "uncertain",
   ]),
   coordinatorStatus: Schema.String,
+  archivedAt: Schema.NullOr(IsoDateTime),
   members: Schema.Array(RepositoryTaskMember),
   graph: Schema.Struct({
     nodes: Schema.Array(RepositoryTaskGraphNode),
@@ -154,5 +157,8 @@ export const REPOSITORY_TASK_METHODS = {
   tasksCreate: "repositoryTasks.create",
   tasksGet: "repositoryTasks.get",
   tasksStop: "repositoryTasks.stop",
+  tasksAcknowledge: "repositoryTasks.acknowledge",
+  tasksArchive: "repositoryTasks.archive",
+  tasksUnarchive: "repositoryTasks.unarchive",
   tasksSubscribe: "repositoryTasks.subscribe",
 } as const;
