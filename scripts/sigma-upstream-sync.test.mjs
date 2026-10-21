@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -161,6 +162,9 @@ if args and args[0] == "fetch" and os.environ.get("SYNC_TEST_HOLD_FETCH_READY"):
         time.sleep(0.01)
 if args and args[0] == "push" and os.environ.get("MOVE_LOCAL_BRANCH"):
     subprocess.run([os.environ["REAL_GIT"], "update-ref", "refs/heads/" + os.environ["MOVE_LOCAL_BRANCH"], os.environ["MOVE_LOCAL_TO"]], cwd=os.getcwd(), check=True)
+if args and args[0] == "push" and os.environ.get("SYNC_TEST_PUSH_REJECT"):
+    sys.stderr.write(os.environ["SYNC_TEST_PUSH_REJECT"])
+    sys.exit(1)
 if args and args[0] in {"fetch", "push", "ls-remote"}:
     names = {"origin": "file://" + os.environ["ORIGIN_BARE"], "upstream": "file://" + os.environ["UPSTREAM_BARE"]}
     for index, value in enumerate(args):
@@ -171,8 +175,11 @@ os.execv(os.environ["REAL_GIT"], [os.environ["REAL_GIT"], *args])
 `,
   );
   chmodSync(gitAdapter, 0o755);
+  const inherited = { ...gitEnv };
+  for (const key of ["SIGMA_SYNC_OWNER", "CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID"])
+    delete inherited[key];
   const env = {
-    ...gitEnv,
+    ...inherited,
     PATH: `${binDir}:${process.env.PATH}`,
     REAL_GIT: realGit,
     ORIGIN_BARE: originBare,
@@ -478,4 +485,130 @@ test("recovers a claimed session whose first prepare failed before journaling a 
   assert.equal(recovered.result, "recovered-initial");
   const prepared = cli(f, "prepare", ["--session-id", recovered.sessionId]);
   assert.equal(prepared.result, "ready-for-validation");
+});
+
+function advanceUpstream(f, name) {
+  commitFile(f.upstreamWriter, `${name}.txt`, `${name}\n`, `upstream ${name}`, f.env);
+  // The writer pushes to the bare fixture directly; the adapter on PATH would
+  // map its `origin` to the fork fixture.
+  git(["push", "origin", "main"], f.upstreamWriter, { ...f.env, PATH: process.env.PATH });
+  return git(["rev-parse", "HEAD"], f.upstreamWriter, f.env);
+}
+
+function setPrState(f, state) {
+  const gh = JSON.parse(readFileSync(f.ghState, "utf8"));
+  for (const pr of gh.prs) pr.state = state;
+  writeFileSync(f.ghState, JSON.stringify(gh));
+}
+
+test("keeps the run's upstream target pinned while upstream/main advances", (t) => {
+  const f = fixture(t);
+  const prepared = cli(f, "prepare");
+  const pinnedSha = prepared.run.upstreamSha;
+
+  const newer = advanceUpstream(f, "during-checks");
+  const resumed = cli(f, "prepare", ["--session-id", prepared.sessionId]);
+  assert.equal(resumed.result, "ready-for-validation");
+  assert.equal(resumed.run.upstreamSha, pinnedSha);
+  assert.equal(resumed.latestUpstreamSha, newer);
+  assert.equal(Object.keys(journal(f).runs).length, 1);
+
+  cli(f, "record-validation", ["--session-id", prepared.sessionId]);
+  const newest = advanceUpstream(f, "before-publish");
+  const bodyFile = path.join(f.root, "pinned.md");
+  writeFileSync(bodyFile, "Pinned sync body.\n");
+  const published = cli(f, "publish-pr", [
+    "--session-id",
+    prepared.sessionId,
+    "--body-file",
+    bodyFile,
+  ]);
+  assert.equal(published.run.phase, "pr-open");
+  assert.equal(published.run.upstreamSha, pinnedSha);
+
+  setPrState(f, "CLOSED");
+  const next = cli(f, "prepare");
+  assert.equal(next.result, "ready-for-validation");
+  assert.equal(next.run.upstreamSha, newest);
+  assert.equal(next.latestUpstreamSha, undefined);
+  assert.equal(journal(f).runs[pinnedSha].phase, "pr-closed");
+});
+
+test("surfaces push stderr and asks for the workflow scope when GitHub rejects workflow changes", (t) => {
+  const f = fixture(t);
+  const prepared = cli(f, "prepare");
+  cli(f, "record-validation", ["--session-id", prepared.sessionId]);
+  const bodyFile = path.join(f.root, "push.md");
+  writeFileSync(bodyFile, "Sync body.\n");
+  const publish = () =>
+    cli(f, "publish-pr", ["--session-id", prepared.sessionId, "--body-file", bodyFile], 1);
+
+  f.helperEnv = {
+    ...f.env,
+    SYNC_TEST_PUSH_REJECT:
+      " ! [remote rejected] HEAD -> sigma-upstream/x (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)\nerror: failed to push some refs\n",
+  };
+  const scope = publish();
+  assert.match(scope.stderr, /gh auth refresh -h github\.com -s workflow/);
+  assert.match(scope.stderr, /refusing to allow an OAuth App/);
+  assert.equal(journal(f).runs[prepared.run.upstreamSha].phase, "validated");
+
+  f.helperEnv = { ...f.env, SYNC_TEST_PUSH_REJECT: "fatal: unable to access remote: timeout\n" };
+  const generic = publish();
+  assert.match(generic.stderr, /git push of .* failed \(1\)/);
+  assert.match(generic.stderr, /unable to access remote: timeout/);
+  assert.doesNotMatch(generic.stderr, /workflow scope/);
+  assert.equal(git(["ls-remote", "--heads", "origin", prepared.run.branch], f.repo, f.env), "");
+
+  f.helperEnv = undefined;
+  const published = cli(f, "publish-pr", [
+    "--session-id",
+    prepared.sessionId,
+    "--body-file",
+    bodyFile,
+  ]);
+  assert.equal(published.run.phase, "pr-open");
+});
+
+test("creates worktrees beside the checkout and keeps journaled runs under the Git dir working", (t) => {
+  const f = fixture(t);
+  const prepared = cli(f, "prepare");
+  const sha = prepared.run.upstreamSha;
+  assert.equal(prepared.run.worktree, path.join(realpathSync(f.root), "repo-sync", sha));
+
+  // Earlier helper versions recorded worktrees inside the Git dir.
+  const legacy = path.join(f.repo, ".git", "sigma-upstream-sync", "worktrees", sha);
+  mkdirSync(path.dirname(legacy), { recursive: true });
+  git(["worktree", "move", prepared.run.worktree, legacy], f.repo, f.env);
+  const file = path.join(f.repo, ".git", "sigma-upstream-sync", "journal.json");
+  const saved = journal(f);
+  saved.runs[sha].worktree = legacy;
+  writeFileSync(file, `${JSON.stringify(saved, null, 2)}\n`);
+
+  const resumed = cli(f, "prepare", ["--session-id", prepared.sessionId]);
+  assert.equal(resumed.run.worktree, legacy);
+  const recorded = cli(f, "record-validation", ["--session-id", prepared.sessionId]);
+  assert.equal(recorded.run.testedSha, git(["rev-parse", "HEAD"], legacy, f.env));
+});
+
+test("accepts SIGMA_SYNC_OWNER or a Claude Code session id as the session owner", (t) => {
+  const f = fixture(t);
+  delete f.env.CODEX_THREAD_ID;
+  const missing = cli(f, "prepare", [], 1);
+  assert.match(missing.stderr, /Set SIGMA_SYNC_OWNER/);
+
+  f.helperEnv = { ...f.env, SIGMA_SYNC_OWNER: "bad owner" };
+  assert.match(cli(f, "prepare", [], 1).stderr, /SIGMA_SYNC_OWNER must be/);
+
+  f.helperEnv = { ...f.env, SIGMA_SYNC_OWNER: "nightly-sync-0001" };
+  const prepared = cli(f, "prepare");
+  assert.equal(readRef(f.repo, f.env, sessionRef).value.ownerThread, "nightly-sync-0001");
+  cli(f, "record-validation", ["--session-id", prepared.sessionId]);
+
+  f.helperEnv = { ...f.env, CLAUDE_CODE_SESSION_ID: "0b9e6c1a-claude-session" };
+  const other = cli(f, "record-validation", ["--session-id", prepared.sessionId], 1);
+  assert.match(other.stderr, /does not own the sync session/);
+  const recovered = cli(f, "recover", ["--owner-dead"]);
+  assert.equal(readRef(f.repo, f.env, sessionRef).value.ownerThread, "0b9e6c1a-claude-session");
+  cli(f, "prepare", ["--session-id", recovered.sessionId]);
 });
