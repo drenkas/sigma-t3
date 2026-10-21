@@ -105,7 +105,7 @@ export const RepositoryTaskMember = Schema.Struct({
 });
 export const RepositoryTask = Schema.Struct({
   snapshot: RepositoryTaskSnapshot,
-  state: Schema.Literals(["active", "stopping", "stopped", "uncertain"]),
+  state: Schema.Literals(["active", "finished", "stopping", "stopped", "uncertain"]),
   status: Schema.Literals([
     "pending",
     "running",

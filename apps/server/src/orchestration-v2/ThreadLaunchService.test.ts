@@ -2601,6 +2601,97 @@ it.effect(
 );
 
 it.effect(
+  "repository task finishes after the coordinator settles and releases repositories it never dispatched",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const policy = yield* RepositoryTaskPolicy.RepositoryTaskPolicy;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const sink = yield* EventSink.EventSinkV2;
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+        });
+        const task = yield* tasks.create(harness.input);
+        const dispatched = task.snapshot.members.find((member) => member.projectId === projectId)!;
+        yield* tasks.dispatch(
+          { taskId: harness.input.id, projectId, role: "implementation", prompt: "Only here" },
+          task.snapshot.coordinatorThreadId,
+        );
+        yield* threads.streamStoredEventsFrom({ threadId: dispatched.threadId }).pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "run.updated" && stored.event.payload.status !== "preparing",
+          ),
+          Stream.runHead,
+        );
+        const completeRuns = Effect.fn("test.completeRuns")(function* (threadId: ThreadId) {
+          const projection = yield* threads.getThreadProjection(threadId);
+          const now = yield* DateTime.now;
+          // Synthetic provider output goes through the real event sink, never a fake receipt/store.
+          yield* sink.write({
+            events: projection.runs
+              .filter((run) => run.completedAt === null)
+              .map((run) => ({
+                id: EventId.make(`finished:${run.id}`),
+                threadId,
+                runId: run.id,
+                occurredAt: now,
+                type: "run.updated" as const,
+                payload: { ...run, status: "completed" as const, completedAt: now },
+              })),
+          });
+        });
+        yield* completeRuns(dispatched.threadId);
+        yield* tasks.reconcile(harness.input.id);
+        const memberRoot = yield* threads.getThreadProjection(dispatched.threadId);
+        const unrelated = {
+          ...memberRoot.thread,
+          id: ThreadId.make("unrelated-second-writer"),
+          projectId: otherProjectId,
+          worktreePath: null,
+          lineage: {
+            ...memberRoot.thread.lineage,
+            rootThreadId: ThreadId.make("unrelated-second-writer"),
+          },
+        };
+        assert.equal(
+          (yield* policy.assertMayStart(unrelated).pipe(Effect.flip)).reason,
+          "conflict",
+        );
+        assert.equal((yield* tasks.get(harness.input.id)).state, "active");
+
+        yield* completeRuns(task.snapshot.coordinatorThreadId);
+        yield* tasks.reconcile(harness.input.id);
+
+        const finished = yield* tasks.get(harness.input.id);
+        assert.equal(finished.state, "finished");
+        assert.equal(finished.status, "completed");
+        yield* policy.assertMayStart(unrelated);
+        yield* policy.assertMayStart(memberRoot.thread);
+        assert.equal((yield* tasks.stop(harness.input.id)).state, "finished");
+        assert.equal(
+          (yield* tasks
+            .dispatch(
+              {
+                taskId: harness.input.id,
+                projectId: otherProjectId,
+                role: "implementation",
+                prompt: "Too late",
+              },
+              task.snapshot.coordinatorThreadId,
+            )
+            .pipe(Effect.flip)).reason,
+          "conflict",
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
   "repository task delegation binds the exact snapshot role and rejects shared workspaces, escaped roots and stopped descendants",
   () =>
     Effect.gen(function* () {

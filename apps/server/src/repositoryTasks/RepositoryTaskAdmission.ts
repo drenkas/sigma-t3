@@ -43,6 +43,7 @@ const make = Effect.gen(function* () {
           }>`SELECT state FROM repository_tasks WHERE id = ${taskId}`.pipe(
             Effect.mapError((cause) => new RepositoryTaskError({ reason: "persistence", cause })),
           );
+          if (states[0]?.state === "finished") return yield* release;
           if (states[0]?.state !== "active")
             return yield* new RepositoryTaskError({ reason: "conflict" });
           if (owners[0]!.direct_member !== 1) return yield* release;

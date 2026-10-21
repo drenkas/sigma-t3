@@ -7,6 +7,7 @@ import {
   type OrchestratorMcpDelegateTaskInput,
   type OrchestrationV2ServerCommand,
 } from "@t3tools/contracts";
+import { pathsOverlap } from "./paths.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -72,6 +73,8 @@ const make = Effect.gen(function* () {
     `.pipe(Effect.mapError(persistence));
     if (!rows[0]) return null;
     const row = rows[0];
+    // A finished task no longer owns its threads; they continue as ordinary threads.
+    if (row.state === "finished") return null;
     const snapshot = yield* decodeSnapshot(row.snapshot_json).pipe(Effect.mapError(persistence));
     return { ...row, snapshot };
   });
@@ -156,13 +159,7 @@ const make = Effect.gen(function* () {
           : member.workspaceStrategy.type === "root"
             ? member.workspaceRoot
             : null);
-      if (
-        claimedPath !== null &&
-        (cwd === claimedPath ||
-          cwd.startsWith(`${claimedPath}/`) ||
-          claimedPath.startsWith(`${cwd}/`))
-      )
-        return yield* denied();
+      if (claimedPath !== null && pathsOverlap(cwd, claimedPath)) return yield* denied();
     }
   });
   const prepareDelegation = Effect.fn("RepositoryTaskPolicy.prepareDelegation")(function* (

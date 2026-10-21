@@ -17,6 +17,7 @@ import {
   isOrchestrationV2WorkActive,
   isProviderAvailable,
 } from "@t3tools/contracts";
+import { pathsOverlap } from "./paths.ts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -398,8 +399,9 @@ const make = Effect.gen(function* () {
       coordinator !== null && settled(coordinator) && !(yield* treeSettled(coordinator))
         ? "waiting"
         : status(coordinator);
+    const finished = row.state === "finished";
     const taskStatus: RepositoryTask["status"] =
-      row.state !== "active"
+      row.state !== "active" && row.state !== "finished"
         ? row.state
         : views.some((member) => member.status === "uncertain")
           ? "uncertain"
@@ -410,20 +412,28 @@ const make = Effect.gen(function* () {
             : views.some((member) => member.status === "interrupted") ||
                 coordinatorStatus === "interrupted"
               ? "interrupted"
-              : views.length > 0 &&
-                  views.every(
-                    (member) =>
-                      member.status === "completed" && member.deliveryState === "delivered",
-                  ) &&
-                  coordinatorStatus === "completed"
+              : coordinatorStatus === "completed" &&
+                  (finished
+                    ? // The coordinator may finish without dispatching every repository.
+                      views.every(
+                        (member) =>
+                          member.launchState === "pending" || member.status === "completed",
+                      )
+                    : views.length > 0 &&
+                      views.every(
+                        (member) =>
+                          member.status === "completed" && member.deliveryState === "delivered",
+                      ))
                 ? "completed"
-                : views.some((member) => member.status === "waiting") ||
-                    coordinatorStatus === "waiting"
-                  ? "waiting"
-                  : views.every((member) => member.launchState === "pending") &&
-                      coordinatorStatus === "idle"
-                    ? "pending"
-                    : "running";
+                : finished
+                  ? "interrupted"
+                  : views.some((member) => member.status === "waiting") ||
+                      coordinatorStatus === "waiting"
+                    ? "waiting"
+                    : views.every((member) => member.launchState === "pending") &&
+                        coordinatorStatus === "idle"
+                      ? "pending"
+                      : "running";
     return {
       snapshot,
       state: row.state,
@@ -466,12 +476,7 @@ const make = Effect.gen(function* () {
           strategy.type === "existing_worktree"
             ? yield* fs.realPath(strategy.worktreePath).pipe(Effect.mapError(executionError))
             : workspaceRoot;
-        if (
-          [...paths].some(
-            (path) => path === cwd || path.startsWith(`${cwd}/`) || cwd.startsWith(`${path}/`),
-          )
-        )
-          return yield* fail("conflict");
+        if ([...paths].some((path) => pathsOverlap(path, cwd))) return yield* fail("conflict");
         paths.add(cwd);
         if (strategy.type === "existing_worktree") {
           const worktrees = yield* git
@@ -506,7 +511,7 @@ const make = Effect.gen(function* () {
         });
       }
       const otherTasks =
-        yield* sql<TaskRow>`SELECT * FROM repository_tasks WHERE state != 'stopped'`.pipe(
+        yield* sql<TaskRow>`SELECT * FROM repository_tasks WHERE state IN ('active', 'stopping', 'uncertain')`.pipe(
           Effect.mapError(persistenceError),
         );
       for (const other of otherTasks) {
@@ -527,7 +532,7 @@ const make = Effect.gen(function* () {
                     entry.workspaceStrategy.type === "existing_worktree"
                       ? entry.workspaceStrategy.worktreePath
                       : entry.workspaceRoot;
-                  return path === cwd || path.startsWith(`${cwd}/`) || cwd.startsWith(`${path}/`);
+                  return pathsOverlap(path, cwd);
                 })(),
             )
           )
@@ -631,12 +636,15 @@ const make = Effect.gen(function* () {
               (shell.pendingBackgroundTasks?.length ?? 0) === 0)
           )
             continue;
-          const source = yield* project(shell.projectId);
-          const otherCwd = yield* fs
-            .realPath(shell.worktreePath ?? source.workspaceRoot)
+          const source = yield* projects
+            .getById(shell.projectId)
             .pipe(Effect.mapError(executionError));
-          if (otherCwd === cwd || otherCwd.startsWith(`${cwd}/`) || cwd.startsWith(`${otherCwd}/`))
-            return yield* fail("conflict");
+          // A thread whose project was deleted holds no checkout this task could collide with.
+          if (Option.isNone(source) || source.value.deletedAt !== null) continue;
+          const otherCwd = yield* fs
+            .realPath(shell.worktreePath ?? source.value.workspaceRoot)
+            .pipe(Effect.mapError(executionError));
+          if (pathsOverlap(otherCwd, cwd)) return yield* fail("conflict");
         }
       }
       yield* validateSelection(snap.projectId, role.modelSelection, snapshot.runtimeMode);
@@ -719,7 +727,8 @@ const make = Effect.gen(function* () {
   );
   const stop = Effect.fn("RepositoryTasks.stop")(
     function* (taskId: string) {
-      const { snapshot } = yield* readTask(taskId);
+      const { row, snapshot } = yield* readTask(taskId);
+      if (row.state === "finished" || row.state === "stopped") return yield* get(taskId);
       yield* sql
         .withTransaction(
           Effect.gen(function* () {
@@ -756,6 +765,31 @@ const make = Effect.gen(function* () {
     (effect, taskId) => locks.withLock(taskId, effect),
   );
 
+  // Finishing releases the task's repository claims, so it waits until the coordinator can no
+  // longer dispatch and every launched participant's result has reached it.
+  const finishIfDone = Effect.fn("RepositoryTasks.finishIfDone")(function* (
+    taskId: string,
+    snapshot: RepositoryTaskSnapshot,
+  ) {
+    const members =
+      yield* sql<MemberRow>`SELECT * FROM repository_task_members WHERE task_id = ${taskId}`.pipe(
+        Effect.mapError(persistenceError),
+      );
+    if (
+      !members.every(
+        (member) =>
+          member.launch_state === "pending" ||
+          (member.launch_state === "dispatched" && member.delivery_state === "delivered"),
+      )
+    )
+      return;
+    const coordinator = yield* records(snapshot.coordinatorThreadId);
+    if (coordinator === null || !(yield* treeSettled(coordinator))) return;
+    yield* sql`UPDATE repository_tasks SET state = 'finished' WHERE id = ${taskId} AND state = 'active'`.pipe(
+      Effect.mapError(persistenceError),
+    );
+    yield* notifyChanged;
+  });
   const reconcile = Effect.fn("RepositoryTasks.reconcile")(
     function* (taskId: string) {
       const { row, snapshot, members } = yield* readTask(taskId);
@@ -816,6 +850,7 @@ const make = Effect.gen(function* () {
         );
         yield* notifyChanged;
       }
+      yield* finishIfDone(taskId, snapshot);
     },
     (effect, taskId) =>
       locks.withLock(taskId, effect).pipe(
@@ -829,9 +864,10 @@ const make = Effect.gen(function* () {
       ),
   );
   const recover = Effect.fn("RepositoryTasks.recover")(function* () {
-    const rows = yield* sql<TaskRow>`SELECT * FROM repository_tasks WHERE state != 'stopped'`.pipe(
-      Effect.mapError(persistenceError),
-    );
+    const rows =
+      yield* sql<TaskRow>`SELECT * FROM repository_tasks WHERE state IN ('active', 'stopping', 'uncertain')`.pipe(
+        Effect.mapError(persistenceError),
+      );
     for (const row of rows) {
       const { members } = yield* readTask(row.id);
       const coordinator = yield* receipts

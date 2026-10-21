@@ -38,9 +38,12 @@ const make = Effect.gen(function* () {
         Stream.runForEach(({ event }) =>
           tasks.taskIdsForThread(event.threadId).pipe(
             Effect.flatMap((ids) =>
-              Effect.forEach(ids, (id) => tasks.reconcile(id), { discard: true }),
+              ids.length === 0
+                ? Effect.void
+                : Effect.forEach(ids, (id) => tasks.reconcile(id), { discard: true }).pipe(
+                    Effect.andThen(tasks.notifyChanged),
+                  ),
             ),
-            Effect.andThen(tasks.notifyChanged),
             Effect.catch(() =>
               Effect.logWarning(
                 "Repository task result delivery failed; the task requires recovery",

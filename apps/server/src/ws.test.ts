@@ -467,10 +467,10 @@ it.effect(
             {},
             yield* PreviewAutomationBroker.PreviewAutomationBroker,
             yield* ServerBrowser.ServerBrowser,
-            yield* RepositoryTasks.RepositoryTasks.pipe(
-              Effect.provide(Layer.mock(RepositoryTasks.RepositoryTasks)({})),
-            ),
-          ).pipe(Layer.provide(configRpcServices)),
+          ).pipe(
+            Layer.provide(configRpcServices),
+            Layer.provide(Layer.mock(RepositoryTasks.RepositoryTasks)({})),
+          ),
         ),
       );
       const requestId = RpcMessage.RequestId("config");
