@@ -107,44 +107,9 @@ function MemberFolders({
   return (
     <SettingsRow
       title={showMachine ? (member.environmentLabel ?? "Environment") : "Agents can work in"}
-      description={
-        local
-          ? "Drop folders here or add them. Diffs and checkpoints cover the first folder only."
-          : "Add folders from the desktop app on this machine. Diffs and checkpoints cover the first folder only."
-      }
-      control={
-        pickFolders ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!editable}
-            onClick={() => void pickFolders(member.workspaceRoot).then(add)}
-          >
-            <FolderPlusIcon />
-            Add folders
-          </Button>
-        ) : null
-      }
+      description="Diffs and checkpoints cover the first folder only."
     >
-      <ul
-        aria-label="Project folders"
-        className={cn(
-          "-mx-1.5 mb-2 rounded-md border border-transparent p-0.5",
-          dragging && "border-dashed border-primary bg-primary/5",
-        )}
-        onDragOver={(event) => {
-          if (!editable) return;
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          setDragging(false);
-          if (!editable) return;
-          event.preventDefault();
-          add(droppedFolderPaths(event));
-        }}
-      >
+      <ul aria-label="Project folders" className="-mx-1.5 p-0.5">
         {[member.workspaceRoot, ...folders].map((folder, index) => (
           <li key={folder} className="flex h-7 min-w-0 items-center gap-2 px-1">
             <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -163,6 +128,44 @@ function MemberFolders({
           </li>
         ))}
       </ul>
+      {local ? (
+        <div
+          aria-label="Drop folders here"
+          className={cn(
+            "mb-3 mt-1 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 py-4 text-xs text-muted-foreground",
+            dragging && "border-primary bg-primary/5 text-foreground",
+          )}
+          onDragOver={(event) => {
+            if (!editable) return;
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            setDragging(false);
+            if (!editable) return;
+            event.preventDefault();
+            add(droppedFolderPaths(event));
+          }}
+        >
+          <span>Drop folders here</span>
+          {pickFolders ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!editable}
+              onClick={() => void pickFolders(member.workspaceRoot).then(add)}
+            >
+              <FolderPlusIcon />
+              Add folders
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Add folders from the desktop app on this machine.
+        </p>
+      )}
     </SettingsRow>
   );
 }
