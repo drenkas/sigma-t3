@@ -35,6 +35,8 @@ export const ProjectRow = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
   autoPull: Schema.Boolean,
+  // Optional so callers that build rows by hand need not know about the fork's column.
+  additionalWorkspaceRoots: Schema.optionalKey(Schema.Array(Schema.String)),
   faviconPath: Schema.NullOr(Schema.String),
   projectIcon: Schema.NullOr(StoredProjectIcon),
   scripts: Schema.Array(ProjectScript),
@@ -48,6 +50,7 @@ const ProjectDbRow = Schema.Struct({
   ...ProjectRow.fields,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
   autoPull: Schema.BooleanFromBit,
+  additionalWorkspaceRoots: Schema.fromJsonString(Schema.Array(Schema.String)),
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
 });
@@ -61,6 +64,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
+    additionalWorkspaceRoots: row.additionalWorkspaceRoots ?? [],
     faviconPath: row.faviconPath,
     projectIcon: row.projectIcon,
     scripts: row.scripts,
@@ -116,6 +120,7 @@ export const make = Effect.gen(function* () {
         default_model_selection_json AS "defaultModelSelection",
         default_thread_env_mode AS "defaultThreadEnvMode",
         auto_pull AS "autoPull",
+        additional_workspace_roots_json AS "additionalWorkspaceRoots",
         favicon_path AS "faviconPath",
         project_icon_json AS "projectIcon",
         scripts_json AS "scripts",
@@ -136,7 +141,7 @@ export const make = Effect.gen(function* () {
   });
 
   const upsertRow = (row: ProjectRow) =>
-    encodeRow(row).pipe(
+    encodeRow({ ...row, additionalWorkspaceRoots: row.additionalWorkspaceRoots ?? [] }).pipe(
       Effect.flatMap(
         (encoded) => sql`
           INSERT INTO projection_projects (
@@ -146,6 +151,7 @@ export const make = Effect.gen(function* () {
             default_model_selection_json,
             default_thread_env_mode,
             auto_pull,
+            additional_workspace_roots_json,
             favicon_path,
             project_icon_json,
             scripts_json,
@@ -160,6 +166,7 @@ export const make = Effect.gen(function* () {
             ${encoded.defaultModelSelection},
             ${encoded.defaultThreadEnvMode},
             ${encoded.autoPull},
+            ${encoded.additionalWorkspaceRoots},
             ${encoded.faviconPath},
             ${encoded.projectIcon},
             ${encoded.scripts},
@@ -174,6 +181,7 @@ export const make = Effect.gen(function* () {
             default_model_selection_json = excluded.default_model_selection_json,
             default_thread_env_mode = excluded.default_thread_env_mode,
             auto_pull = excluded.auto_pull,
+            additional_workspace_roots_json = excluded.additional_workspace_roots_json,
             favicon_path = excluded.favicon_path,
             project_icon_json = excluded.project_icon_json,
             scripts_json = excluded.scripts_json,
@@ -250,6 +258,9 @@ export const make = Effect.gen(function* () {
           ? {}
           : { defaultThreadEnvMode: payload.defaultThreadEnvMode }),
         ...(payload.autoPull === undefined ? {} : { autoPull: payload.autoPull }),
+        ...(payload.additionalWorkspaceRoots === undefined
+          ? {}
+          : { additionalWorkspaceRoots: payload.additionalWorkspaceRoots }),
         ...(payload.faviconPath === undefined ? {} : { faviconPath: payload.faviconPath }),
         ...(payload.projectIcon === undefined ? {} : { projectIcon: payload.projectIcon }),
         ...(payload.scripts === undefined ? {} : { scripts: payload.scripts }),

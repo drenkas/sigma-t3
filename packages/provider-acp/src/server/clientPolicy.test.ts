@@ -68,6 +68,16 @@ describe("acpPermissionDisposition", () => {
     );
   });
 
+  it("treats a project's additional folders as writable roots", () => {
+    const projectFolder = NodePath.resolve(process.cwd(), "acp-project-folder");
+    const edit = permissionRequest("edit", [{ path: NodePath.join(projectFolder, "api.ts") }]);
+    assert.equal(acpPermissionDisposition(policy, edit), "deny");
+    assert.equal(
+      acpPermissionDisposition({ ...policy, additionalDirectories: [projectFolder] }, edit),
+      "allow",
+    );
+  });
+
   it("denies missing or out-of-root mutation locations", () => {
     const outside = NodePath.resolve(process.cwd(), "outside-acp-permission-workspace", "file.ts");
     assert.equal(acpPermissionDisposition(policy, permissionRequest("edit")), "deny");

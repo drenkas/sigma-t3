@@ -2,14 +2,17 @@ import * as Effect from "effect/Effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import Migration0004 from "./SigmaMigrations/004_ProjectAdditionalWorkspaceRoots.ts";
+
 // Fork tables keep their own history table. Upstream numbers its migrations
 // sequentially, and the migrator skips every id up to the highest recorded one,
 // so a fork migration in effect_sql_migrations would hide upstream's next one.
 const run = Migrator.make({});
 
-// Ids 1-3 created the removed repository task tables. Databases that ran them keep the
-// rows and tables; the next fork migration must use id 4 or later.
-const sigmaMigrations = Migrator.fromRecord({});
+// Ids 1-3 created the removed repository task tables; databases that ran them keep them.
+const sigmaMigrations = Migrator.fromRecord({
+  "4_ProjectAdditionalWorkspaceRoots": Migration0004,
+});
 
 // Builds before the fork had its own table recorded repository tasks as upstream id 68.
 const releasedUpstreamIds = [[68, "RepositoryTasks"]] as const;

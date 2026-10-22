@@ -165,6 +165,7 @@ export const make = Effect.gen(function* () {
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
+    additionalWorkspaceRoots: row.additionalWorkspaceRoots ?? [],
     projectIcon: row.projectIcon,
     scripts: row.scripts,
     createdAt: row.createdAt,
@@ -359,6 +360,12 @@ export const make = Effect.gen(function* () {
               projectId: input.projectId,
               workspaceRoot: input.workspaceRoot,
             });
+      const additionalWorkspaceRoots =
+        input.additionalWorkspaceRoots === undefined
+          ? undefined
+          : yield* Effect.forEach(input.additionalWorkspaceRoots, (folder) =>
+              normalizeWorkspaceRoot({ projectId: input.projectId, workspaceRoot: folder }),
+            );
       yield* commit({
         type: "project.meta.update",
         commandId: input.commandId,
@@ -369,6 +376,7 @@ export const make = Effect.gen(function* () {
           ? {}
           : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
+        ...(additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
         ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
         ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
         ...(input.defaultThreadEnvMode === undefined

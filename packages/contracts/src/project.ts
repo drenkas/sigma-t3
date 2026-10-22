@@ -148,6 +148,14 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+/**
+ * Folders an agent may work in besides the project root. The root stays the agent's working
+ * directory and the only checkout T3 diffs, checkpoints and branches.
+ */
+export const ProjectAdditionalWorkspaceRoots = Schema.Array(TrimmedNonEmptyString).check(
+  Schema.isMaxLength(20),
+);
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -159,6 +167,7 @@ export const Project = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Opt-in because background sync performs network I/O and may move the checkout.
   autoPull: Schema.optional(Schema.Boolean),
+  additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -196,6 +205,7 @@ export const ProjectUpdatePayload = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
+  additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),

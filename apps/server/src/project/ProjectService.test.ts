@@ -351,6 +351,48 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 
+  it.effect("keeps a project's additional folders normalized and apart from its root", () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const projectId = ProjectId.make("project:folders");
+      yield* service.create({
+        commandId: CommandId.make("command:folders:create"),
+        projectId,
+        title: "Folders",
+        workspaceRoot: "/work/folders-web",
+      });
+
+      const updated = yield* service.update({
+        commandId: CommandId.make("command:folders:add"),
+        projectId,
+        additionalWorkspaceRoots: ["/work/folders-api/", "/work/folders-docs"],
+      });
+      assert.deepEqual(updated.additionalWorkspaceRoots, [
+        "/work/folders-api",
+        "/work/folders-docs",
+      ]);
+      const rejected = yield* service
+        .update({
+          commandId: CommandId.make("command:folders:root"),
+          projectId,
+          additionalWorkspaceRoots: ["/work/folders-web/"],
+        })
+        .pipe(Effect.flip);
+      assert.equal(rejected._tag, "ProjectOperationError");
+      assert.deepEqual(
+        Option.getOrThrow(yield* service.getById(projectId)).additionalWorkspaceRoots,
+        ["/work/folders-api", "/work/folders-docs"],
+      );
+
+      const cleared = yield* service.update({
+        commandId: CommandId.make("command:folders:clear"),
+        projectId,
+        additionalWorkspaceRoots: [],
+      });
+      assert.deepEqual(cleared.additionalWorkspaceRoots, []);
+    }),
+  );
+
   it.effect("replays a workspace conflict after the workspace frees up", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;

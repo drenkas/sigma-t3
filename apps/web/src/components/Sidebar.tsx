@@ -194,7 +194,7 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
-import { TooltipProvider } from "./ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import {
@@ -2688,6 +2688,7 @@ export default function Sidebar() {
                               <FolderIcon className="size-4 shrink-0" />
                             )}
                             <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
+                            {project ? <ProjectFolderCount project={project} /> : null}
                             {project && showProjectEnvironments ? (
                               <ProjectEnvironmentBadge
                                 group={project}
@@ -3136,5 +3137,28 @@ export default function Sidebar() {
       </SidebarContent>
       <SidebarChromeFooter />
     </>
+  );
+}
+
+/** A project with additional folders lists every folder an agent may work in. */
+function ProjectFolderCount({ project }: { project: SidebarProjectSnapshot }) {
+  const folders = project.memberProjects.flatMap((member) => [
+    member.workspaceRoot,
+    ...(member.additionalWorkspaceRoots ?? []),
+  ]);
+  if (folders.length === project.memberProjects.length) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="shrink-0 text-xs text-muted-foreground" />}>
+        {folders.length} folders
+      </TooltipTrigger>
+      <TooltipPopup>
+        {folders.map((folder) => (
+          <span key={folder} className="block">
+            {folder}
+          </span>
+        ))}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
