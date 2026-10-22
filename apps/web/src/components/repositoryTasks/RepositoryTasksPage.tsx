@@ -42,7 +42,11 @@ import { buildThreadRouteParams } from "../../threadRoutes";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { RepositoryTaskMerges } from "./RepositoryTaskMerges";
 import { randomUUID } from "../../lib/utils";
-import { shouldRenderTraitsControls, TraitsPicker } from "../chat/TraitsPicker";
+import {
+  readPromptUltrathink,
+  shouldRenderTraitsControls,
+  TraitsPicker,
+} from "../chat/TraitsPicker";
 import {
   deriveProviderInstanceEntries,
   isProviderInstancePickerReady,
@@ -1235,11 +1239,12 @@ function ModelOptionsPicker({
   selectionLabel: string;
 }) {
   if (!model) return null;
+  const promptUltrathink = readPromptUltrathink(prompt);
   const hasOptions = shouldRenderTraitsControls({
     provider: model.driver,
     models: model.models,
     model: model.selection.model,
-    prompt,
+    promptUltrathink,
     modelOptions: options,
     allowPromptInjectedEffort: false,
     planModeEnabled: true,
@@ -1256,8 +1261,8 @@ function ModelOptionsPicker({
             instanceId={model.selection.instanceId}
             models={model.models}
             model={model.selection.model}
-            prompt={prompt}
-            onPromptChange={onPromptChange}
+            promptUltrathink={promptUltrathink}
+            onPromptEdit={(edit) => onPromptChange(edit(prompt))}
             modelOptions={options}
             onModelOptionsChange={onChange}
             allowPromptInjectedEffort={false}
