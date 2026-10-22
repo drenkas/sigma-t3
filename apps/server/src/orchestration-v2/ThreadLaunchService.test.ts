@@ -2404,6 +2404,40 @@ it.effect(
     }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect(
+  "repository role models persist per environment and per group without touching task snapshots",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness();
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const review = { role: "review" as const, modelSelection };
+        const implementation = harness.input.roles[0]!;
+        assert.deepEqual(yield* tasks.listRoleModels, []);
+        yield* tasks.setRoleModels([implementation, review]);
+        yield* tasks.upsertGroup({
+          id: harness.input.groupId,
+          title: "Group",
+          projectIds: [projectId, otherProjectId],
+          roleModels: [review],
+        });
+        const task = yield* tasks.create(harness.input);
+
+        // Replacing the defaults drops roles left out, and a group keeps its own override.
+        assert.deepEqual(yield* tasks.setRoleModels([review]), [review]);
+        const restarted = yield* Effect.service(RepositoryTasks.RepositoryTasks).pipe(
+          Effect.provide(Layer.fresh(RepositoryTasks.layer)),
+        );
+        assert.deepEqual(yield* restarted.listRoleModels, [review]);
+        assert.deepEqual((yield* restarted.listGroups)[0]!.roleModels, [review]);
+        assert.deepEqual(
+          (yield* restarted.get(task.snapshot.id)).snapshot.roles,
+          task.snapshot.roles,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect.each(["model", "option", "duplicate-role"] as const)(
   "repository task model admission fails closed: %s",
   (invalid) =>

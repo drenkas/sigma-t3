@@ -18,6 +18,7 @@ const RPC_AGGREGATES = {
   [REPOSITORY_TASK_METHODS.groupsList]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.groupsUpsert]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.groupsDelete]: "repositoryTasks",
+  [REPOSITORY_TASK_METHODS.roleModelsSet]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.tasksList]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.tasksCreate]: "repositoryTasks",
   [REPOSITORY_TASK_METHODS.tasksGet]: "repositoryTasks",

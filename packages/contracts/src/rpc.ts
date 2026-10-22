@@ -3,6 +3,8 @@ import {
   RepositoryGroup,
   RepositoryGroupUpsertInput,
   RepositoryGroupIdInput,
+  RepositoryRoleModels,
+  RepositoryRoleModelsInput,
   RepositoryTask,
   RepositoryTaskCreateInput,
   RepositoryTaskIdInput,
@@ -1800,12 +1802,21 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
 
 const WsRepositoryGroupsListRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsList, {
   payload: Schema.Struct({}),
-  success: Schema.Struct({ groups: Schema.Array(RepositoryGroup) }),
+  // Role models travel with the groups: the task form needs both to prefill its roles.
+  success: Schema.Struct({
+    groups: Schema.Array(RepositoryGroup),
+    roleModels: RepositoryRoleModels,
+  }),
   error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
 });
 const WsRepositoryGroupsUpsertRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsUpsert, {
   payload: RepositoryGroupUpsertInput,
   success: RepositoryGroup,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryRoleModelsSetRpc = Rpc.make(REPOSITORY_TASK_METHODS.roleModelsSet, {
+  payload: RepositoryRoleModelsInput,
+  success: RepositoryRoleModelsInput,
   error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
 });
 const WsRepositoryGroupsDeleteRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsDelete, {
@@ -1965,6 +1976,7 @@ export const WsRepositoryTasksRpcGroup = RpcGroup.make(
   WsRepositoryGroupsListRpc,
   WsRepositoryGroupsUpsertRpc,
   WsRepositoryGroupsDeleteRpc,
+  WsRepositoryRoleModelsSetRpc,
   WsRepositoryTasksListRpc,
   WsRepositoryTasksCreateRpc,
   WsRepositoryTasksGetRpc,

@@ -16,6 +16,7 @@ import { WS_METHODS } from "./rpc.ts";
 export const CLIENT_GUARDED_RPC_SCOPES = {
   [REPOSITORY_TASK_METHODS.groupsUpsert]: AuthOrchestrationOperateScope,
   [REPOSITORY_TASK_METHODS.groupsDelete]: AuthOrchestrationOperateScope,
+  [REPOSITORY_TASK_METHODS.roleModelsSet]: AuthOrchestrationOperateScope,
   [REPOSITORY_TASK_METHODS.tasksCreate]: AuthOrchestrationOperateScope,
   [REPOSITORY_TASK_METHODS.tasksStop]: AuthOrchestrationOperateScope,
   [REPOSITORY_TASK_METHODS.tasksAcknowledge]: AuthOrchestrationOperateScope,

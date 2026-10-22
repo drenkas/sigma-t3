@@ -29,6 +29,7 @@ describe("Sigma migrations", () => {
           [1, "RepositoryTasks"],
           [2, "RepositoryTaskArchive"],
           [3, "RepositoryTaskMerges"],
+          [4, "RepositoryRoleModels"],
         ],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -50,6 +51,7 @@ describe("Sigma migrations", () => {
           [1, "RepositoryTasks"],
           [2, "RepositoryTaskArchive"],
           [3, "RepositoryTaskMerges"],
+          [4, "RepositoryRoleModels"],
         ],
       });
       const groups = yield* sql<{ readonly id: string }>`SELECT id FROM repository_groups`;

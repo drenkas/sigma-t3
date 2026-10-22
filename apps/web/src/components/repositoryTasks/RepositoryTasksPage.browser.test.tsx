@@ -349,6 +349,77 @@ describe("RepositoryTasksPage capability guard", () => {
     expect(state.commandRuns).toBe(0);
   });
 
+  it("prefills role models from the group, then the host, and saves host defaults", async () => {
+    setup();
+    state.commandSucceeds = true;
+    state.commandInputs = [];
+    state.capability = true;
+    const projectIds = ["project-a"];
+    state.projects = projectIds.map((id) => ({
+      id,
+      environmentId: state.environmentId,
+      title: id,
+      workspaceRoot: `/work/${id}`,
+    }));
+    const first: ModelSelection = { instanceId: "codex" as never, model: "first-model" };
+    const second: ModelSelection = { instanceId: "codex" as never, model: "second-model" };
+    state.groups = [
+      {
+        id: "group-a",
+        title: "Saved group",
+        projectIds,
+        roleModels: [{ role: "implementation", modelSelection: first }],
+      },
+    ];
+    state.detail = {
+      roleModels: [
+        { role: "implementation", modelSelection: second },
+        { role: "review", modelSelection: second },
+      ],
+    };
+    state.providers = [
+      {
+        instanceId: "codex",
+        driver: "codex",
+        displayName: "Provider A",
+        enabled: true,
+        installed: true,
+        status: "ready",
+        auth: { status: "authenticated" },
+        version: null,
+        checkedAt: "2026-10-21T10:00:00.000Z",
+        slashCommands: [],
+        skills: [],
+        models: ["first-model", "second-model"].map((slug) => ({
+          slug,
+          name: slug,
+          isCustom: false,
+          capabilities: {},
+        })),
+      },
+    ];
+    replaceProviderCatalog();
+    await using screen = await render(<RepositoryTasksPage onTaskChange={() => {}} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Saved group" }));
+    await expect
+      .element(screen.getByRole("combobox", { name: "implementation model" }))
+      .toHaveTextContent("Provider A · first-model");
+    // Without the app stylesheet the checkbox box has no size, so click its label instead.
+    await userEvent.click(screen.getByText("review", { exact: true }));
+    await expect
+      .element(screen.getByRole("combobox", { name: "review model" }))
+      .toHaveTextContent("Provider A · second-model");
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Review (host default)" }));
+    await userEvent.click(screen.getByRole("option", { name: "No default" }));
+    expect(state.commandAtoms.at(-1)).toBe(repositoryTaskEnvironment.setRoleModels);
+    expect(state.commandInputs.at(-1)).toEqual({
+      environmentId: state.environmentId,
+      input: { roles: [{ role: "implementation", modelSelection: second }] },
+    });
+  });
+
   it("blocks task creation while repository group edits are unsaved", async () => {
     setup();
     state.queryInputs = [];

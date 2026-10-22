@@ -5,14 +5,15 @@ import {
   RepositoryGroup,
   RepositoryTaskSnapshot,
   RepositoryTaskError,
+  ModelSelection,
   type RepositoryGroupUpsertInput,
+  type RepositoryTaskRole,
   RepositoryTaskCreateInput,
   type RepositoryTaskDispatchInput,
   type RepositoryTask,
   type RepositoryTaskMemberSnapshot,
   type RepositoryTaskMerge,
   type RepositoryTaskMergePreview,
-  type ModelSelection,
   type ProjectId,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadProjection,
@@ -86,6 +87,8 @@ const decodeGroup = Schema.decodeUnknownEffect(Schema.fromJsonString(RepositoryG
 const decodeSnapshot = Schema.decodeUnknownEffect(Schema.fromJsonString(RepositoryTaskSnapshot));
 const isRepositoryTaskError = Schema.is(RepositoryTaskError);
 const encodeGroup = Schema.encodeSync(Schema.fromJsonString(RepositoryGroup));
+const decodeModelSelection = Schema.decodeUnknownEffect(Schema.fromJsonString(ModelSelection));
+const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const encodeSnapshot = Schema.encodeSync(Schema.fromJsonString(RepositoryTaskSnapshot));
 const encodeRequest = Schema.encodeSync(Schema.fromJsonString(RepositoryTaskCreateInput));
 const fail = (reason: RepositoryTaskError["reason"], cause?: unknown) =>
@@ -112,6 +115,11 @@ export class RepositoryTasks extends Context.Service<
       input: RepositoryGroupUpsertInput,
     ) => Effect.Effect<RepositoryGroup, RepositoryTaskError>;
     readonly deleteGroup: (id: string) => Effect.Effect<void, RepositoryTaskError>;
+    // The environment's default model for each role; a group may override them.
+    readonly listRoleModels: Effect.Effect<ReadonlyArray<RepositoryTaskRole>, RepositoryTaskError>;
+    readonly setRoleModels: (
+      roles: ReadonlyArray<RepositoryTaskRole>,
+    ) => Effect.Effect<ReadonlyArray<RepositoryTaskRole>, RepositoryTaskError>;
     readonly listTasks: (input: {
       readonly archived: boolean;
     }) => Effect.Effect<ReadonlyArray<RepositoryTask>, RepositoryTaskError>;
@@ -258,6 +266,34 @@ const make = Effect.gen(function* () {
       Effect.mapError(persistenceError),
     );
     return group;
+  });
+  const listRoleModels = sql<{
+    role: RepositoryTaskRole["role"];
+    model_selection_json: string;
+  }>`SELECT role, model_selection_json FROM repository_role_models ORDER BY role`.pipe(
+    Effect.mapError(persistenceError),
+    Effect.flatMap((rows) =>
+      Effect.forEach(rows, (row) =>
+        decodeModelSelection(row.model_selection_json).pipe(
+          Effect.map((modelSelection) => ({ role: row.role, modelSelection })),
+          Effect.mapError(persistenceError),
+        ),
+      ),
+    ),
+  );
+  const setRoleModels = Effect.fn("RepositoryTasks.setRoleModels")(function* (
+    roles: ReadonlyArray<RepositoryTaskRole>,
+  ) {
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`DELETE FROM repository_role_models`;
+          for (const entry of roles)
+            yield* sql`INSERT INTO repository_role_models (role, model_selection_json) VALUES (${entry.role}, ${encodeModelSelection(entry.modelSelection)})`;
+        }),
+      )
+      .pipe(Effect.mapError(persistenceError));
+    return yield* listRoleModels;
   });
   const deleteGroup = Effect.fn("RepositoryTasks.deleteGroup")(function* (id: string) {
     yield* sql`DELETE FROM repository_groups WHERE id = ${id}`.pipe(
@@ -1425,6 +1461,8 @@ const make = Effect.gen(function* () {
     notifyChanged,
     listGroups,
     upsertGroup,
+    listRoleModels,
+    setRoleModels,
     deleteGroup,
     listTasks,
     create,

@@ -13,7 +13,9 @@ export const layer = ServerRepositoryTasksRpcGroup.toLayer(
   Effect.map(RepositoryTasks.RepositoryTasks, (tasks) =>
     ServerRepositoryTasksRpcGroup.of({
       [REPOSITORY_TASK_METHODS.groupsList]: () =>
-        tasks.listGroups.pipe(Effect.map((groups) => ({ groups }))),
+        Effect.all({ groups: tasks.listGroups, roleModels: tasks.listRoleModels }),
+      [REPOSITORY_TASK_METHODS.roleModelsSet]: ({ roles }) =>
+        tasks.setRoleModels(roles).pipe(Effect.map((saved) => ({ roles: saved }))),
       [REPOSITORY_TASK_METHODS.groupsUpsert]: (input) => tasks.upsertGroup(input),
       [REPOSITORY_TASK_METHODS.groupsDelete]: ({ id }) => tasks.deleteGroup(id).pipe(Effect.as({})),
       [REPOSITORY_TASK_METHODS.tasksList]: ({ archived }) =>

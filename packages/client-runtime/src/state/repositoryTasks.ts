@@ -44,6 +44,12 @@ export function createRepositoryTaskEnvironmentAtoms<R, E>(
       scheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    setRoleModels: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:repository-tasks:role-models",
+      tag: REPOSITORY_TASK_METHODS.roleModelsSet,
+      scheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     deleteGroup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:repository-tasks:group-delete",
       tag: REPOSITORY_TASK_METHODS.groupsDelete,

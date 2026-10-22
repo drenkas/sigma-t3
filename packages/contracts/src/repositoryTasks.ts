@@ -23,10 +23,18 @@ export const RepositoryTaskRole = Schema.Struct({
   modelSelection: ModelSelection,
 });
 export type RepositoryTaskRole = typeof RepositoryTaskRole.Type;
+// One model per role, each role at most once.
+export const RepositoryRoleModels = Schema.Array(RepositoryTaskRole).check(
+  Schema.makeFilter((roles) => new Set(roles.map((entry) => entry.role)).size === roles.length, {
+    expected: "each role at most once",
+  }),
+);
 export const RepositoryGroup = Schema.Struct({
   id: Id,
   title: Title,
   projectIds: Schema.Array(ProjectId),
+  // Overrides the environment's role models for tasks started from this group.
+  roleModels: Schema.optionalKey(RepositoryRoleModels),
   updatedAt: IsoDateTime,
 });
 export type RepositoryGroup = typeof RepositoryGroup.Type;
@@ -34,7 +42,9 @@ export const RepositoryGroupUpsertInput = Schema.Struct({
   id: Id,
   title: Title,
   projectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+  roleModels: Schema.optionalKey(RepositoryRoleModels),
 });
+export const RepositoryRoleModelsInput = Schema.Struct({ roles: RepositoryRoleModels });
 export type RepositoryGroupUpsertInput = typeof RepositoryGroupUpsertInput.Type;
 export const RepositoryGroupIdInput = Schema.Struct({ id: Id });
 export const RepositoryTaskMemberInput = Schema.Struct({
@@ -207,6 +217,7 @@ export const REPOSITORY_TASK_METHODS = {
   groupsList: "repositoryGroups.list",
   groupsUpsert: "repositoryGroups.upsert",
   groupsDelete: "repositoryGroups.delete",
+  roleModelsSet: "repositoryGroups.setRoleModels",
   tasksList: "repositoryTasks.list",
   tasksCreate: "repositoryTasks.create",
   tasksGet: "repositoryTasks.get",

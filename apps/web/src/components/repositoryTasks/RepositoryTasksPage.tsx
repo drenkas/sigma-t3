@@ -3,14 +3,12 @@ import {
   type EnvironmentId,
   type ProjectId,
   type ThreadId,
-  type ModelSelection,
   type RepositoryGroup,
+  type RepositoryTaskRole,
   type RepositoryTask,
   type RuntimeMode,
   type ProviderInteractionMode,
-  type ProviderDriverKind,
   type ProviderOptionSelection,
-  type ServerProviderModel,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -44,33 +42,25 @@ import { RepositoryTaskGraph } from "./RepositoryTaskGraph";
 import { RepositoryTaskMerges } from "./RepositoryTaskMerges";
 import { randomUUID } from "../../lib/utils";
 import {
-  readPromptUltrathink,
-  shouldRenderTraitsControls,
-  TraitsPicker,
-} from "../chat/TraitsPicker";
-import {
-  deriveProviderInstanceEntries,
-  isProviderInstancePickerReady,
-} from "../../providerInstances";
-import { getProviderModelCapabilities } from "../../providerModels";
+  availableModels,
+  ModelOptionsPicker,
+  modelKey as savedModelKey,
+  ModelSelect,
+  resolveRoleModel,
+  ROLES,
+  RoleModelsEditor,
+  selectedOptionsUnavailable,
+  type Role,
+} from "./repositoryTaskModels";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 
-const ROLES = ["implementation", "research", "review", "design", "test", "general"] as const;
-type Role = (typeof ROLES)[number];
-type AvailableModel = {
-  key: string;
-  selection: ModelSelection;
-  label: string;
-  driver: ProviderDriverKind;
-  models: ReadonlyArray<ServerProviderModel>;
-  model: ServerProviderModel;
-};
 type WorkspaceChoice = "root" | "worktree";
 const EMPTY_PROJECT_IDS: ReadonlyArray<ProjectId> = [];
+const EMPTY_ROLE_MODELS: ReadonlyArray<RepositoryTaskRole> = [];
 const needsAcknowledgement = (task: RepositoryTask) =>
   task.state === "uncertain" ||
   task.members.some(
@@ -89,59 +79,6 @@ const optionKey = (
 const pretty = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ");
 const errText = (error: unknown) =>
   error instanceof Error ? error.message : "The repository task request failed.";
-function unavailableModelLabel(key: string): string {
-  try {
-    const selection = JSON.parse(key) as { instanceId?: unknown; model?: unknown };
-    return typeof selection.model === "string"
-      ? `${selection.model} (${String(selection.instanceId ?? "provider")})`
-      : "previous selection";
-  } catch {
-    return "previous selection";
-  }
-}
-
-function availableModels(
-  providers: ReturnType<typeof useEnvironmentProviders>,
-  environmentId: EnvironmentId | null,
-): AvailableModel[] {
-  if (!environmentId) return [];
-  const entries = deriveProviderInstanceEntries(providers.get(environmentId) ?? []);
-  return entries.flatMap((provider) =>
-    isProviderInstancePickerReady(provider) && provider.snapshot.supportsTextGeneration !== false
-      ? provider.models.map((model) => {
-          const selection: ModelSelection = { instanceId: provider.instanceId, model: model.slug };
-          return {
-            key: JSON.stringify(selection),
-            selection,
-            label: `${provider.displayName} · ${model.name}`,
-            driver: provider.driverKind,
-            models: provider.models,
-            model,
-          };
-        })
-      : [],
-  );
-}
-
-function selectedOptionsUnavailable(
-  model: AvailableModel | undefined,
-  selections: ReadonlyArray<ProviderOptionSelection> | undefined,
-): boolean {
-  if (!model || !selections?.length) return false;
-  const descriptors =
-    getProviderModelCapabilities(model.models, model.model.slug, model.driver).optionDescriptors ??
-    [];
-  return selections.some((selection) => {
-    const descriptor = descriptors.find((candidate) => candidate.id === selection.id);
-    if (!descriptor) return true;
-    if (descriptor.type === "boolean") return typeof selection.value !== "boolean";
-    return (
-      typeof selection.value !== "string" ||
-      !descriptor.options.some((option) => option.id === selection.value)
-    );
-  });
-}
-
 export function RepositoryTasksPage({
   environmentId: requestedEnvironmentId,
   taskId,
@@ -161,6 +98,7 @@ export function RepositoryTasksPage({
   const [groupId, setGroupId] = useState("");
   const [groupTitle, setGroupTitle] = useState("");
   const [groupProjectIds, setGroupProjectIds] = useState<ProjectId[]>([]);
+  const [groupRoleModels, setGroupRoleModels] = useState<RepositoryTaskRole[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [memberIds, setMemberIds] = useState<ProjectId[]>([]);
@@ -214,6 +152,7 @@ export function RepositoryTasksPage({
   const detailQuery = useEnvironmentQuery(detailAtom);
   const updatesQuery = useEnvironmentQuery(updatesAtom);
   const groups = groupsQuery.data?.groups ?? [];
+  const hostRoleModels = groupsQuery.data?.roleModels ?? EMPTY_ROLE_MODELS;
   const tasks = tasksQuery.data?.tasks ?? [];
   const task = updatesQuery.data?.snapshot.id === taskId ? updatesQuery.data : detailQuery.data;
   const selectedGroup = groups.find((group) => group.id === groupId);
@@ -236,6 +175,9 @@ export function RepositoryTasksPage({
     reportFailure: false,
   });
   const deleteGroup = useAtomCommand(repositoryTaskEnvironment.deleteGroup, {
+    reportFailure: false,
+  });
+  const setRoleModels = useAtomCommand(repositoryTaskEnvironment.setRoleModels, {
     reportFailure: false,
   });
   const createTask = useAtomCommand(repositoryTaskEnvironment.createTask, { reportFailure: false });
@@ -263,7 +205,8 @@ export function RepositoryTasksPage({
     !selectedGroup ||
     selectedGroup.title !== groupTitle ||
     selectedGroup.projectIds.length !== groupProjectIds.length ||
-    selectedGroup.projectIds.some((id) => !groupProjectIds.includes(id));
+    selectedGroup.projectIds.some((id) => !groupProjectIds.includes(id)) ||
+    JSON.stringify(selectedGroup.roleModels ?? []) !== JSON.stringify(groupRoleModels);
   const sameEnvironmentGroup =
     !!selectedGroup &&
     savedGroupProjectIds.length > 0 &&
@@ -321,12 +264,32 @@ export function RepositoryTasksPage({
     });
   }
 
+  // Fills each role from the group's override or the host default; roles with neither keep
+  // what the form already has.
+  function applyRoleModels(group: RepositoryGroup | null) {
+    for (const role of ROLES) {
+      const saved = resolveRoleModel(role, group?.roleModels, hostRoleModels)?.modelSelection;
+      if (!saved) continue;
+      const key = savedModelKey(saved);
+      setRoleKeys((current) => ({ ...current, [role]: key }));
+      updateModelOptions(optionKey(environmentId, role, key), saved.options);
+    }
+  }
   function selectGroup(group: RepositoryGroup | null) {
     setGroupId(group?.id ?? "");
     setGroupTitle(group?.title ?? "");
     setGroupProjectIds(group ? [...group.projectIds] : []);
+    setGroupRoleModels(group?.roleModels ? [...group.roleModels] : []);
     setMemberIds(group ? [...group.projectIds] : []);
     setCoordinatorProjectId(group?.projectIds[0] ?? "");
+    applyRoleModels(group);
+  }
+  async function saveRoleModels(roles: RepositoryTaskRole[]) {
+    if (!environmentId || !canOperate) return;
+    setError("");
+    const result = await setRoleModels({ environmentId, input: { roles } });
+    if (result._tag === "Failure") setError(errText(squashAtomCommandFailure(result)));
+    groupsQuery.refresh();
   }
   async function saveGroup() {
     if (
@@ -346,10 +309,12 @@ export function RepositoryTasksPage({
           id: groupId || randomUUID(),
           title: groupTitle.trim(),
           projectIds: groupProjectIds,
+          ...(groupRoleModels.length ? { roleModels: groupRoleModels } : {}),
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       setGroupId(result.value.id);
+      applyRoleModels(result.value);
       setMemberIds([...result.value.projectIds]);
       groupsQuery.refresh();
     } catch (reason) {
@@ -565,6 +530,14 @@ export function RepositoryTasksPage({
                 </p>
               )}
             </fieldset>
+            <RoleModelsEditor
+              label="Group role models"
+              scope="this group"
+              emptyLabel="Host default"
+              models={models}
+              value={groupRoleModels}
+              onChange={setGroupRoleModels}
+            />
             <div className="flex gap-2">
               <Button
                 onClick={() => void saveGroup()}
@@ -787,6 +760,27 @@ export function RepositoryTasksPage({
               <PlayIcon />
               Create and start task
             </Button>
+          </section>
+
+          <section
+            aria-label="Role models"
+            className="space-y-4 rounded-xl border border-border p-4 xl:col-span-2"
+          >
+            <div>
+              <h2 className="text-lg font-semibold">Role models</h2>
+              <p className="text-sm text-muted-foreground">
+                The model each role starts with on this host. A group can override them, and a task
+                keeps the models it started with.
+              </p>
+            </div>
+            <RoleModelsEditor
+              label="Host role models"
+              scope="host default"
+              emptyLabel="No default"
+              models={models}
+              value={hostRoleModels}
+              onChange={(roles) => void saveRoleModels(roles)}
+            />
           </section>
 
           <section className="space-y-4 rounded-xl border border-border p-4 xl:col-span-2">
@@ -1023,118 +1017,5 @@ export function RepositoryTasksPage({
         </div>
       ) : null}
     </main>
-  );
-}
-
-function ModelSelect({
-  label,
-  models,
-  value,
-  onChange,
-}: {
-  label: string;
-  models: AvailableModel[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const selected = models.find((model) => model.key === value);
-  const unavailable = !!value && !selected;
-  return (
-    <label className="grid min-w-0 gap-1 text-sm font-medium">
-      {label}
-      <Select value={value} onValueChange={(next) => onChange(next ?? "")}>
-        <SelectTrigger size="sm" aria-label={label}>
-          <SelectValue>
-            {selected?.label ??
-              (unavailable
-                ? `Unavailable: ${unavailableModelLabel(value)}`
-                : models.length
-                  ? "Choose a model"
-                  : "No available models")}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectPopup>
-          {unavailable ? (
-            <SelectItem value={value} disabled>
-              Unavailable: {unavailableModelLabel(value)}
-            </SelectItem>
-          ) : null}
-          {models.map((model) => (
-            <SelectItem key={model.key} value={model.key}>
-              {model.label}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-    </label>
-  );
-}
-
-function ModelOptionsPicker({
-  model,
-  options,
-  prompt,
-  onPromptChange,
-  onChange,
-  disabled,
-  selectionLabel,
-}: {
-  model: AvailableModel | undefined;
-  options: ReadonlyArray<ProviderOptionSelection> | undefined;
-  prompt: string;
-  onPromptChange: (prompt: string) => void;
-  onChange: (options: ReadonlyArray<ProviderOptionSelection> | undefined) => void;
-  disabled: boolean;
-  selectionLabel: string;
-}) {
-  if (!model) return null;
-  const promptUltrathink = readPromptUltrathink(prompt);
-  const hasOptions = shouldRenderTraitsControls({
-    provider: model.driver,
-    models: model.models,
-    model: model.selection.model,
-    promptUltrathink,
-    modelOptions: options,
-    allowPromptInjectedEffort: false,
-    planModeEnabled: true,
-  });
-  const hasStaleOptions = selectedOptionsUnavailable(model, options);
-  if (!hasOptions && !hasStaleOptions) return null;
-  return (
-    <div className="flex items-center gap-2">
-      {hasOptions ? (
-        <>
-          <span className="text-xs font-medium text-muted-foreground">Options</span>
-          <TraitsPicker
-            provider={model.driver}
-            instanceId={model.selection.instanceId}
-            models={model.models}
-            model={model.selection.model}
-            promptUltrathink={promptUltrathink}
-            onPromptEdit={(edit) => onPromptChange(edit(prompt))}
-            modelOptions={options}
-            onModelOptionsChange={onChange}
-            allowPromptInjectedEffort={false}
-            planModeEnabled={true}
-            disabled={disabled}
-          />
-        </>
-      ) : null}
-      {hasStaleOptions ? (
-        <>
-          <span role="status" className="text-xs text-destructive">
-            Saved options are no longer advertised.
-          </span>
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={disabled}
-            onClick={() => onChange(undefined)}
-          >
-            Clear unavailable options for {selectionLabel}
-          </Button>
-        </>
-      ) : null}
-    </div>
   );
 }
