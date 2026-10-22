@@ -20,6 +20,14 @@ const EDGE_DASH: Record<string, string | undefined> = {
   context_transfer: "2 3",
   merge: "5 4",
 };
+const LEGEND: Record<string, string> = {
+  delegation: "── delegated",
+  fork: "── fork",
+  subagent: "── subagent",
+  result: "╌╌ result",
+  context_transfer: "┈┈ context transfer",
+  merge: "- - merge",
+};
 const clampZoom = (value: number) => Math.max(0.3, Math.min(2, value));
 
 /**
@@ -301,10 +309,11 @@ export function ExecutionGraph({
         </div>
       </div>
       <ul aria-label="Link types" className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <li>── delegated</li>
-        <li>╌╌ result</li>
-        <li>┈┈ context transfer</li>
-        <li>- - merge</li>
+        {Object.entries(LEGEND)
+          .filter(([kind]) => edges.some((edge) => edge.kind === kind))
+          .map(([kind, text]) => (
+            <li key={kind}>{text}</li>
+          ))}
       </ul>
     </section>
   );
