@@ -2,6 +2,8 @@ export type ExecutionGraphNode = {
   readonly id: string;
   readonly title: string;
   readonly subtitle: string;
+  // Picks the node's colour, so the same role reads the same everywhere.
+  readonly role: string;
   readonly status: string;
   readonly pendingApproval: boolean;
 };
@@ -18,7 +20,7 @@ export const NODE_H = 64;
 const PAD = 12;
 const INDENT = 28;
 const GAP = 12;
-const LANE = 10;
+const LANE = 14;
 
 export const RUNNING_STATUSES = new Set(["running", "starting", "preparing", "queued"]);
 export const FAILED_STATUSES = new Set(["failed", "error", "cancelled", "rolled_back"]);
@@ -80,19 +82,19 @@ export function layoutExecutionGraph(
       drawn.push({
         edge,
         tree: true,
-        path: `M${x} ${a.y + NODE_H} V${y - 8} Q${x} ${y} ${x + 8} ${y} H${b.x - 2}`,
+        path: `M${x} ${a.y + NODE_H} V${y - 10} Q${x} ${y} ${x + 10} ${y} H${b.x}`,
       });
       continue;
     }
     const lane = right + PAD + lanes++ * LANE;
     const sy = a.y + NODE_H / 2 + 8;
     const ty = b.y + NODE_H / 2 - 8;
-    const r = Math.min(8, Math.abs(sy - ty) / 2);
+    const r = Math.min(12, Math.abs(sy - ty) / 2);
     const dir = ty < sy ? -1 : 1;
     drawn.push({
       edge,
       tree: false,
-      path: `M${a.x + NODE_W} ${sy} H${lane - r} Q${lane} ${sy} ${lane} ${sy + dir * r} V${ty - dir * r} Q${lane} ${ty} ${lane - r} ${ty} H${b.x + NODE_W + 2}`,
+      path: `M${a.x + NODE_W} ${sy} H${lane - r} Q${lane} ${sy} ${lane} ${sy + dir * r} V${ty - dir * r} Q${lane} ${ty} ${lane - r} ${ty} H${b.x + NODE_W + 3}`,
     });
   }
   return {

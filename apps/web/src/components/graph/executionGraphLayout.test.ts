@@ -6,6 +6,7 @@ const node = (id: string) => ({
   id,
   title: id,
   subtitle: "",
+  role: "agent",
   status: "idle",
   pendingApproval: false,
 });

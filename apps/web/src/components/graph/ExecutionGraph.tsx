@@ -15,20 +15,68 @@ import {
 } from "./executionGraphLayout";
 
 const pretty = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ");
-const EDGE_DASH: Record<string, string | undefined> = {
-  result: "6 3",
-  context_transfer: "2 3",
-  merge: "5 4",
+
+// Tailwind's 500 shades, inline so the canvas keeps its colours without the stylesheet.
+const PALETTE = {
+  violet: "oklch(0.606 0.25 292.717)",
+  blue: "oklch(0.623 0.214 259.815)",
+  amber: "oklch(0.769 0.188 70.08)",
+  emerald: "oklch(0.696 0.17 162.48)",
+  pink: "oklch(0.656 0.241 354.308)",
+  cyan: "oklch(0.715 0.143 215.221)",
+  teal: "oklch(0.704 0.14 182.503)",
+  indigo: "oklch(0.585 0.233 277.117)",
+  orange: "oklch(0.705 0.213 47.604)",
+  lime: "oklch(0.768 0.233 130.85)",
+  rose: "oklch(0.645 0.246 16.439)",
+  slate: "oklch(0.554 0.046 257.417)",
 };
-const LEGEND: Record<string, string> = {
-  delegation: "── delegated",
-  fork: "── fork",
-  subagent: "── subagent",
-  result: "╌╌ result",
-  context_transfer: "┈┈ context transfer",
-  merge: "- - merge",
+const ROLE_COLORS: Record<string, string> = {
+  coordinator: PALETTE.violet,
+  implementation: PALETTE.blue,
+  research: PALETTE.amber,
+  review: PALETTE.emerald,
+  design: PALETTE.pink,
+  test: PALETTE.cyan,
+  general: PALETTE.indigo,
+  agent: PALETTE.slate,
+  current: PALETTE.violet,
+  parent: PALETTE.slate,
+  fork: PALETTE.indigo,
+  subagent: PALETTE.teal,
+  unavailable: PALETTE.slate,
 };
+const SPARE_COLORS = [PALETTE.orange, PALETTE.lime, PALETTE.rose, PALETTE.indigo, PALETTE.cyan];
+const roleColor = (role: string) =>
+  ROLE_COLORS[role] ??
+  SPARE_COLORS[[...role].reduce((sum, char) => sum + char.charCodeAt(0), 0) % SPARE_COLORS.length]!;
+
+// Tree links are the structure and stay quiet; the other links say what moved between nodes.
+const LINKS: Record<string, { label: string; color: string | null; dash?: string }> = {
+  membership: { label: "repository", color: null },
+  delegation: { label: "delegated", color: null },
+  fork: { label: "fork", color: null },
+  subagent: { label: "subagent", color: null },
+  result: { label: "result", color: PALETTE.emerald, dash: "6 4" },
+  context_transfer: { label: "context transfer", color: PALETTE.cyan, dash: "2 4" },
+  merge: { label: "merge", color: PALETTE.violet, dash: "8 4" },
+};
+const statusTone = (status: string) =>
+  FAILED_STATUSES.has(status)
+    ? "bg-destructive"
+    : RUNNING_STATUSES.has(status)
+      ? "bg-info motion-safe:animate-status-pulse"
+      : status === "completed"
+        ? "bg-success"
+        : status === "waiting"
+          ? "bg-warning"
+          : "bg-muted-foreground/40";
 const clampZoom = (value: number) => Math.max(0.3, Math.min(2, value));
+const fitZoom = (viewport: HTMLDivElement, width: number, height: number) =>
+  Math.max(
+    0.3,
+    Math.min(1, (viewport.clientWidth - 16) / width, (viewport.clientHeight - 16) / height),
+  );
 
 /**
  * The execution tree of agents and the links recorded between them. Draws once per data
@@ -55,17 +103,21 @@ export function ExecutionGraph({
   const movedRef = useRef(false);
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [view, setView] = useState({ zoom: 1, x: 0, y: 0 });
+  // Buttons glide the view; dragging and wheel zoom follow the pointer without a lag.
+  const [gliding, setGliding] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
 
   const fitTo = (viewport: HTMLDivElement) => {
-    const zoom = Math.max(0.3, Math.min(1, (viewport.clientWidth - 16) / layout.width));
+    const zoom = fitZoom(viewport, layout.width, layout.height);
     movedRef.current = false;
+    setGliding(true);
     setView({ zoom, x: Math.max(8, (viewport.clientWidth - layout.width * zoom) / 2), y: 8 });
   };
   const zoomBy = (factor: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     movedRef.current = true;
+    setGliding(true);
     const cx = viewport.clientWidth / 2;
     const cy = viewport.clientHeight / 2;
     setView((old) => {
@@ -79,17 +131,17 @@ export function ExecutionGraph({
   };
 
   // Keeps the whole tree in view while it grows, until the user pans or zooms.
-  const { width } = layout;
+  const { width, height } = layout;
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     return observeResize(viewport, () => {
       if (!movedRef.current && viewport.clientWidth > 0) {
-        const zoom = Math.max(0.3, Math.min(1, (viewport.clientWidth - 16) / width));
+        const zoom = fitZoom(viewport, width, height);
         setView({ zoom, x: Math.max(8, (viewport.clientWidth - width * zoom) / 2), y: 8 });
       }
     });
-  }, [width]);
+  }, [viewportRef, width, height]);
 
   // React registers wheel listeners as passive, and zooming has to keep the page from scrolling.
   useEffect(() => {
@@ -99,11 +151,12 @@ export function ExecutionGraph({
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       movedRef.current = true;
+      setGliding(false);
       setView((old) => ({ ...old, zoom: clampZoom(old.zoom * (event.deltaY > 0 ? 0.9 : 1.1)) }));
     };
     viewport.addEventListener("wheel", onWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [viewportRef]);
 
   const panKeys = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
@@ -197,6 +250,7 @@ export function ExecutionGraph({
         onPointerDown={(event) => {
           if ((event.target as Element).closest("button")) return;
           dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y };
+          setGliding(false);
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
@@ -217,6 +271,11 @@ export function ExecutionGraph({
         }}
       >
         <div
+          className={
+            gliding
+              ? "transition-transform duration-200 ease-out motion-reduce:transition-none"
+              : ""
+          }
           style={{
             position: "absolute",
             top: 0,
@@ -235,34 +294,71 @@ export function ExecutionGraph({
             style={{ position: "absolute", inset: 0 }}
           >
             <defs>
-              <marker
-                id="execution-graph-arrow"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M0 1 L10 5 L0 9 z" fill="currentColor" />
-              </marker>
+              {Object.entries(LINKS).map(([kind, link]) =>
+                link.color === null ? null : (
+                  <marker
+                    key={kind}
+                    id={`execution-graph-arrow-${kind}`}
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth="8"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
+                  >
+                    <path
+                      d="M2 1.5 L8 5 L2 8.5"
+                      fill="none"
+                      stroke={link.color}
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </marker>
+                ),
+              )}
             </defs>
-            {layout.edges.map(({ edge, path }) => (
-              <path
-                key={edge.id}
-                d={path}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeDasharray={EDGE_DASH[edge.kind]}
-                markerEnd="url(#execution-graph-arrow)"
-                className={related(edge) ? "opacity-100" : "opacity-20"}
-              />
-            ))}
+            {layout.edges.map(({ edge, path, tree }) => {
+              const link = LINKS[edge.kind];
+              const color = link?.color ?? null;
+              const end = layout.positions.get(edge.target);
+              return (
+                <g
+                  key={edge.id}
+                  className={cn(
+                    "transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none",
+                    related(edge) ? "opacity-100" : "opacity-15",
+                  )}
+                >
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={color ?? "currentColor"}
+                    strokeOpacity={tree ? 0.45 : 0.9}
+                    strokeWidth={hover !== null && related(edge) ? 2 : 1.25}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={link?.dash}
+                    markerEnd={
+                      color === null ? undefined : `url(#execution-graph-arrow-${edge.kind})`
+                    }
+                  />
+                  {tree && end ? (
+                    <circle
+                      cx={end.x}
+                      cy={end.y + NODE_H / 2}
+                      r="2.5"
+                      fill={roleColor(byId.get(edge.target)!.role)}
+                    />
+                  ) : null}
+                </g>
+              );
+            })}
           </svg>
           {layout.order.map(({ id }) => {
             const node = byId.get(id)!;
             const point = layout.positions.get(id)!;
+            const color = roleColor(node.role);
             return (
               <button
                 key={id}
@@ -271,7 +367,7 @@ export function ExecutionGraph({
                 aria-pressed={selectedId === id}
                 aria-label={`${node.title}. ${node.subtitle}. ${pretty(node.status)}${node.pendingApproval ? ", waiting for your approval" : ""}.`}
                 className={cn(
-                  "flex flex-col items-start gap-0.5 rounded-lg border bg-card px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                  "flex flex-col items-start gap-0.5 overflow-hidden rounded-lg border py-2 pr-3 pl-3.5 text-left shadow-xs outline-none transition-[opacity,translate,border-color,box-shadow] duration-200 ease-out starting:translate-y-1 starting:opacity-0 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none",
                   selectedId === id ? "border-primary ring-1 ring-primary" : "border-border",
                   node.pendingApproval && "border-warning",
                   FAILED_STATUSES.has(node.status) && "border-destructive/60",
@@ -283,6 +379,8 @@ export function ExecutionGraph({
                   top: point.y,
                   width: NODE_W,
                   height: NODE_H,
+                  // The role colour tints the card; the bar below marks its edge.
+                  backgroundColor: `color-mix(in oklab, ${color} 7%, var(--color-card))`,
                 }}
                 onClick={() => onSelect(id)}
                 onKeyDown={(event) => nodeKeys(event, id)}
@@ -291,16 +389,36 @@ export function ExecutionGraph({
                 onFocus={() => setHover(id)}
                 onBlur={() => setHover(null)}
               >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    width: 3,
+                    backgroundColor: color,
+                  }}
+                />
                 <span className="w-full truncate text-xs font-medium">{node.title}</span>
                 <span className="w-full truncate text-3xs text-muted-foreground">
                   {node.subtitle}
                 </span>
                 <span
                   className={cn(
-                    "text-3xs",
+                    "flex items-center gap-1.5 text-3xs",
                     node.pendingApproval ? "text-warning" : "text-muted-foreground capitalize",
                   )}
                 >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      node.pendingApproval
+                        ? "bg-warning motion-safe:animate-status-pulse"
+                        : statusTone(node.status),
+                    )}
+                  />
                   {node.pendingApproval ? "Waiting for approval" : pretty(node.status)}
                 </span>
               </button>
@@ -308,11 +426,38 @@ export function ExecutionGraph({
           })}
         </div>
       </div>
-      <ul aria-label="Link types" className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        {Object.entries(LEGEND)
+      <ul
+        aria-label="Legend"
+        className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
+      >
+        {[...new Set(nodes.map((node) => node.role))].map((role) => (
+          <li key={`role:${role}`} className="flex items-center gap-1.5 capitalize">
+            <span
+              aria-hidden="true"
+              className="size-2 rounded-sm"
+              style={{ backgroundColor: roleColor(role) }}
+            />
+            {pretty(role)}
+          </li>
+        ))}
+        {Object.entries(LINKS)
           .filter(([kind]) => edges.some((edge) => edge.kind === kind))
-          .map(([kind, text]) => (
-            <li key={kind}>{text}</li>
+          .map(([kind, link]) => (
+            <li key={kind} className="flex items-center gap-1.5">
+              <svg aria-hidden="true" width="18" height="6">
+                <line
+                  x1="1"
+                  y1="3"
+                  x2="17"
+                  y2="3"
+                  stroke={link.color ?? "currentColor"}
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeDasharray={link.dash}
+                />
+              </svg>
+              {link.label}
+            </li>
           ))}
       </ul>
     </section>
