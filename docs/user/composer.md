@@ -243,6 +243,18 @@ provider supports it. Web and desktop also offer compaction from the context met
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).
 
+## Agent team
+
+Send `/roles` to choose which model handles each role, such as architect,
+implementer, or reviewer. Name the team right after the command, for example
+`/roles architect: opus, reviewer: gpt-5.5 high`, or send `/roles` alone and the
+agent asks which roles you want and suggests models for each one. It saves the
+team once you confirm. `/roles clear` removes it.
+
+Every new conversation starts with the saved team, and the agent delegates each
+role's work to its model. A model you name in a message still wins. The command
+must start the message, and the agent needs T3 Code's tools to save the team.
+
 ## Goals
 
 With Codex and Claude, send `/goal` followed by what "done" means, for example

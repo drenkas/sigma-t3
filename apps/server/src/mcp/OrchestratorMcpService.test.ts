@@ -1157,6 +1157,57 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
   );
 
+  it.effect("saves the team, reports it in capabilities, and clears it", () =>
+    Effect.gen(function* () {
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: () => Effect.succeed(parentProjection([])),
+        }),
+        ServerSettings.layerTest(),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({
+          getProviders: Effect.succeed([
+            providerSnapshot({
+              instanceId: codexInstanceId,
+              driver: ProviderDriverKind.make("codex"),
+              model: "gpt-5.4",
+            }),
+          ]),
+        }),
+        adapterRegistryLayer([codexInstanceId]),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      );
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const reviewer = {
+          role: "reviewer",
+          providerInstanceId: codexInstanceId,
+          model: "gpt-5.4",
+          options: [{ id: "reasoningEffort", value: "high" }],
+        };
+        yield* service.setTeamRoles({ roles: [reviewer] });
+        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, [reviewer]);
+
+        const unknown = yield* service
+          .setTeamRoles({
+            roles: [{ ...reviewer, providerInstanceId: ProviderInstanceId.make("missing") }],
+          })
+          .pipe(Effect.flip);
+        assert.equal(unknown.code, "invalid_request");
+        const duplicate = yield* service
+          .setTeamRoles({ roles: [reviewer, { ...reviewer, role: "Reviewer" }] })
+          .pipe(Effect.flip);
+        assert.equal(duplicate.code, "invalid_request");
+        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, [reviewer]);
+
+        yield* service.setTeamRoles({ roles: [] });
+        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, []);
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+    }),
+  );
+
   describe("listed models", () => {
     const opencodeInstanceId = ProviderInstanceId.make("opencode");
     const model = (slug: string, extra: Partial<ServerProvider["models"][number]> = {}) => ({

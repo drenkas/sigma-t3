@@ -105,6 +105,16 @@ export function buildComposerSlashCommandItems(input: {
   // Providers expand commands only at the start of a message. T3 commands
   // change local state and do not have this restriction.
   if (!input.atMessageStart) return items;
+  // The server expands `/roles` only when it opens the message.
+  if ("roles".includes(query)) {
+    items.push({
+      id: "cmd:roles",
+      type: "slash-command",
+      command: "roles",
+      label: "/roles",
+      description: "Set up your agent team's models",
+    });
+  }
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {
     if (!command.name.toLowerCase().includes(query)) continue;
     if (command.name === "compact" && !input.hasCompactableConversation) continue;

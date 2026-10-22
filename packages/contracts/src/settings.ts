@@ -26,6 +26,7 @@ import {
   CustomModelSetting,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
+  ProviderOptionSelection,
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./modelSelection.ts";
@@ -1127,6 +1128,23 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
+/**
+ * One role of the user's agent team, saved with the `/roles` command. Every
+ * conversation starts with the team so the agent delegates each role's work to
+ * the model the user picked for it.
+ */
+export const TeamRole = Schema.Struct({
+  role: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  options: Schema.optionalKey(Schema.Array(ProviderOptionSelection)),
+  description: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
+});
+export type TeamRole = typeof TeamRole.Type;
+
+export const TeamRoles = Schema.Array(TeamRole).check(Schema.isMaxLength(20));
+export type TeamRoles = typeof TeamRoles.Type;
+
 export const ServerSettings = Schema.Struct({
   // Null means no client has migrated this preference yet; an empty value is
   // authoritative so another device cannot resurrect cleared preferences.
@@ -1314,6 +1332,7 @@ export const ServerSettings = Schema.Struct({
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  teamRoles: TeamRoles.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1635,6 +1654,8 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+  // Whole-list replacement: the team is saved in one go by `/roles`.
+  teamRoles: Schema.optionalKey(TeamRoles),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
