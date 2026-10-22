@@ -369,6 +369,7 @@ import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplat
 const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
+const EMPTY_FOLDERS: ReadonlyArray<string> = [];
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
@@ -3768,6 +3769,7 @@ export default function ChatView(props: ChatViewProps) {
                 )
               }
               gitCwd={gitCwd}
+              additionalGitCwds={activeProject?.additionalWorkspaceRoots ?? EMPTY_FOLDERS}
               isGitRepo={isGitRepo}
               envLocked={envLocked}
               availableEnvironments={logicalProjectEnvironments}

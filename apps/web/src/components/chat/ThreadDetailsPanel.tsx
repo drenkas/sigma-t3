@@ -19,6 +19,7 @@ import ProjectScriptsControl, {
 import { memo, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
+import { ProjectFolderGitControls } from "./ProjectFolderGitControls";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
@@ -44,6 +45,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   showOpenInPicker: boolean;
   openInShortcutEnabled: boolean;
   gitCwd: string | null;
+  additionalGitCwds: ReadonlyArray<string>;
   isGitRepo: boolean;
   envLocked: boolean;
   availableEnvironments: readonly EnvironmentOption[];
@@ -178,6 +180,16 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
                   />
                 ) : null}
+                {props.additionalGitCwds.map((folder) => (
+                  <ProjectFolderGitControls
+                    key={folder}
+                    environmentId={props.environmentId}
+                    folder={folder}
+                    activeThreadRef={activeThreadRef}
+                    draftId={props.draftId}
+                    compact={density !== "full"}
+                  />
+                ))}
               </div>
             </ThreadDetailsSection>
           ) : null}

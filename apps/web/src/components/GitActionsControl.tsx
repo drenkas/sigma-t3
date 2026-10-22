@@ -130,6 +130,8 @@ interface GitActionsControlProps {
   displayMode?: "toolbar" | "panel";
   compact?: boolean;
   onOpenChanges?: () => void;
+  /** False for a project's extra folders: their branch is not the thread's branch. */
+  tracksThreadBranch?: boolean;
 }
 
 interface PendingDefaultBranchAction {
@@ -962,6 +964,7 @@ export default function GitActionsControl({
   displayMode = "toolbar",
   compact = false,
   onOpenChanges,
+  tracksThreadBranch = true,
 }: GitActionsControlProps) {
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
@@ -1021,7 +1024,7 @@ export default function GitActionsControl({
   }, [inlineSuccess]);
 
   const persistThreadBranchSync = (branch: string | null, manualSelection = false) => {
-    if (!activeThreadRef) {
+    if (!activeThreadRef || !tracksThreadBranch) {
       return;
     }
 
