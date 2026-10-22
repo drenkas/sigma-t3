@@ -1,4 +1,3 @@
-import * as RepositoryTasks from "./repositoryTasks/RepositoryTasks.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -467,10 +466,7 @@ it.effect(
             {},
             yield* PreviewAutomationBroker.PreviewAutomationBroker,
             yield* ServerBrowser.ServerBrowser,
-          ).pipe(
-            Layer.provide(configRpcServices),
-            Layer.provide(Layer.mock(RepositoryTasks.RepositoryTasks)({})),
-          ),
+          ).pipe(Layer.provide(configRpcServices)),
         ),
       );
       const requestId = RpcMessage.RequestId("config");

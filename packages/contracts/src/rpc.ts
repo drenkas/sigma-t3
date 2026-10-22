@@ -1,18 +1,4 @@
 import {
-  REPOSITORY_TASK_METHODS,
-  RepositoryGroup,
-  RepositoryGroupUpsertInput,
-  RepositoryGroupIdInput,
-  RepositoryTask,
-  RepositoryTaskCreateInput,
-  RepositoryTaskIdInput,
-  RepositoryTaskListInput,
-  RepositoryTaskMergeApplyInput,
-  RepositoryTaskMergeInput,
-  RepositoryTaskMergePreview,
-  RepositoryTaskError,
-} from "./repositoryTasks.ts";
-import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -1798,74 +1784,6 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
   stream: true,
 });
 
-const WsRepositoryGroupsListRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsList, {
-  payload: Schema.Struct({}),
-  success: Schema.Struct({ groups: Schema.Array(RepositoryGroup) }),
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryGroupsUpsertRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsUpsert, {
-  payload: RepositoryGroupUpsertInput,
-  success: RepositoryGroup,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryGroupsDeleteRpc = Rpc.make(REPOSITORY_TASK_METHODS.groupsDelete, {
-  payload: RepositoryGroupIdInput,
-  success: Schema.Struct({}),
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksListRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksList, {
-  payload: RepositoryTaskListInput,
-  success: Schema.Struct({ tasks: Schema.Array(RepositoryTask) }),
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksCreateRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksCreate, {
-  payload: RepositoryTaskCreateInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksGetRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksGet, {
-  payload: RepositoryTaskIdInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksSubscribeRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksSubscribe, {
-  payload: RepositoryTaskIdInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-  stream: true,
-});
-const WsRepositoryTasksStopRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksStop, {
-  payload: RepositoryTaskIdInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksAcknowledgeRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksAcknowledge, {
-  payload: RepositoryTaskIdInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksArchiveRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksArchive, {
-  payload: RepositoryTaskIdInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksUnarchiveRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksUnarchive, {
-  payload: RepositoryTaskIdInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-
-const WsRepositoryTasksMergePreviewRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksMergePreview, {
-  payload: RepositoryTaskMergeInput,
-  success: RepositoryTaskMergePreview,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-const WsRepositoryTasksMergeApplyRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksMergeApply, {
-  payload: RepositoryTaskMergeApplyInput,
-  success: RepositoryTask,
-  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
-});
-
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -1961,23 +1879,7 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
   { error: EnvironmentAuthorizationError },
 ) {}
 
-export const WsRepositoryTasksRpcGroup = RpcGroup.make(
-  WsRepositoryGroupsListRpc,
-  WsRepositoryGroupsUpsertRpc,
-  WsRepositoryGroupsDeleteRpc,
-  WsRepositoryTasksListRpc,
-  WsRepositoryTasksCreateRpc,
-  WsRepositoryTasksGetRpc,
-  WsRepositoryTasksStopRpc,
-  WsRepositoryTasksAcknowledgeRpc,
-  WsRepositoryTasksArchiveRpc,
-  WsRepositoryTasksUnarchiveRpc,
-  WsRepositoryTasksMergePreviewRpc,
-  WsRepositoryTasksMergeApplyRpc,
-  WsRepositoryTasksSubscribeRpc,
-).middleware(RpcScopeAuthorization);
-
-export const WsCoreRpcGroup = RpcGroup.make(
+export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -2177,5 +2079,3 @@ export const WsCoreRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeThreadRpc,
   WsOrchestrationV2SubscribeCommandOutputRpc,
 ).middleware(RpcScopeAuthorization);
-
-export const WsRpcGroup = WsCoreRpcGroup.merge(WsRepositoryTasksRpcGroup);

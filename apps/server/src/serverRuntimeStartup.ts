@@ -1,4 +1,3 @@
-import * as RepositoryTaskReactor from "./repositoryTasks/RepositoryTaskReactor.ts";
 import {
   CommandId,
   DEFAULT_MODEL,
@@ -148,7 +147,6 @@ export const makeCommandGate = Effect.gen(function* () {
 });
 
 const recordStartupHeartbeat = Effect.gen(function* () {
-  if (!(yield* AnalyticsService.telemetryEnabled)) return;
   const analytics = yield* AnalyticsService.AnalyticsService;
   const projects = yield* ProjectService.ProjectService;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -573,7 +571,6 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
         : Effect.succeed({})
       ).pipe(Effect.map((targets): AutoBootstrapWelcomeTargets => targets)),
     });
-    yield* (yield* RepositoryTaskReactor.RepositoryTaskReactor).start();
     yield* Effect.logInfo("V2 orchestration recovery completed", recovery);
     // Runs after activation: the status check fetches every enabled project's
     // remote, and awaiting it here held command readiness for that long.

@@ -1,4 +1,3 @@
-import { REPOSITORY_TASK_METHODS } from "@t3tools/contracts";
 import {
   CLIENT_GUARDED_RPC_SCOPES,
   type DeviceListInput,
@@ -39,11 +38,6 @@ import type * as RpcGroup from "effect/rpc/RpcGroup";
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 export const RPC_REQUIRED_SCOPES = {
-  [REPOSITORY_TASK_METHODS.groupsList]: AuthOrchestrationReadScope,
-  [REPOSITORY_TASK_METHODS.tasksList]: AuthOrchestrationReadScope,
-  [REPOSITORY_TASK_METHODS.tasksGet]: AuthOrchestrationReadScope,
-  [REPOSITORY_TASK_METHODS.tasksMergePreview]: AuthOrchestrationReadScope,
-  [REPOSITORY_TASK_METHODS.tasksSubscribe]: AuthOrchestrationReadScope,
   ...CLIENT_GUARDED_RPC_SCOPES,
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,

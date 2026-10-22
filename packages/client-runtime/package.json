@@ -275,10 +275,6 @@
       "types": "./src/state/threads.ts",
       "default": "./src/state/threads.ts"
     },
-    "./state/repository-tasks": {
-      "types": "./src/state/repositoryTasks.ts",
-      "default": "./src/state/repositoryTasks.ts"
-    },
     "./state/subagent-display": {
       "types": "./src/state/subagentDisplay.ts",
       "default": "./src/state/subagentDisplay.ts"
