@@ -84,6 +84,8 @@ export const RepositoryTaskGraphNode = Schema.Struct({
   role: Schema.NullOr(Schema.String),
   modelSelection: Schema.NullOr(ModelSelection),
   status: Schema.String,
+  // A tool approval (not a question) is waiting on the user in this node's thread.
+  pendingApproval: Schema.Boolean,
 });
 export const RepositoryTaskGraphEdge = Schema.Struct({
   id: TrimmedNonEmptyString,

@@ -318,6 +318,10 @@ const make = Effect.gen(function* () {
           ? "waiting"
           : run.status;
   };
+  const awaitingApproval = (record: Records | null) =>
+    record?.runtimeRequests.some(
+      (request) => request.kind !== "user_input" && request.status === "pending",
+    ) ?? false;
   const get = Effect.fn("RepositoryTasks.get")(function* (
     taskId: string,
   ): Effect.fn.Return<RepositoryTask, RepositoryTaskError> {
@@ -336,6 +340,7 @@ const make = Effect.gen(function* () {
       role: "coordinator",
       modelSelection: coordinator?.thread.modelSelection ?? snapshot.modelSelection,
       status: status(coordinator),
+      pendingApproval: awaitingApproval(coordinator),
     });
     const visited = new Set<string>([coordinatorNode]);
     const transfers = new Map<string, Records["contextTransfers"][number]>();
@@ -368,6 +373,7 @@ const make = Effect.gen(function* () {
             role: agent.role ?? null,
             modelSelection: child?.thread.modelSelection ?? agent.modelSelection ?? null,
             status: child === null ? agent.status : status(child),
+            pendingApproval: awaitingApproval(child),
           });
           if (child !== null) yield* addAgents(child, id);
         }
@@ -407,10 +413,7 @@ const make = Effect.gen(function* () {
         preparedRevision: member.prepared_revision,
         workspacePath: member.prepared_path,
         branch: record?.thread.branch ?? null,
-        pendingApproval:
-          record?.runtimeRequests.some(
-            (request) => request.kind !== "user_input" && request.status === "pending",
-          ) ?? false,
+        pendingApproval: awaitingApproval(record),
         deliveryState: member.delivery_state,
         merges: memberMerges,
       });
@@ -425,6 +428,7 @@ const make = Effect.gen(function* () {
           snapshot.roles.find((role) => role.role === member.role)?.modelSelection ??
           null,
         status: memberStatus,
+        pendingApproval: awaitingApproval(record),
       });
       visited.add(id);
       graph.edges.push({

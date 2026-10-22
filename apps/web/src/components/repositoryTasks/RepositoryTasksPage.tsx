@@ -40,6 +40,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { repositoryTaskEnvironment } from "../../state/repositoryTasks";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useRightPanelStore } from "../../rightPanelStore";
+import { RepositoryTaskGraph } from "./RepositoryTaskGraph";
 import { RepositoryTaskMerges } from "./RepositoryTaskMerges";
 import { randomUUID } from "../../lib/utils";
 import {
@@ -139,166 +140,6 @@ function selectedOptionsUnavailable(
       !descriptor.options.some((option) => option.id === selection.value)
     );
   });
-}
-
-function GraphView({
-  task,
-  projectById,
-  onOpenThread,
-}: {
-  task: RepositoryTask;
-  projectById: ReadonlyMap<ProjectId, { readonly title: string }>;
-  onOpenThread: (threadId: ThreadId, diff?: boolean) => void;
-}) {
-  const nodes = task.graph.nodes;
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const columnX = { coordinator: 105, repository: 365, agent: 625 } as const;
-  const columnIndex = { coordinator: 0, repository: 0, agent: 0 };
-  const positions = new Map(
-    nodes.map((node) => {
-      const index = columnIndex[node.kind]++;
-      return [node.id, { x: columnX[node.kind], y: 42 + index * 98 }] as const;
-    }),
-  );
-  const graphHeight = Math.max(120, ...[...positions.values()].map((point) => point.y + 70));
-  return (
-    <section aria-label="Task graph" className="space-y-4">
-      <h2 className="text-base font-semibold">Execution graph</h2>
-      {nodes.length ? (
-        <div className="overflow-x-auto rounded-lg border border-border bg-muted/20 p-3">
-          <svg
-            role="img"
-            aria-label="Repository task nodes connected by recorded execution links"
-            viewBox={`0 0 730 ${graphHeight}`}
-            className="h-auto min-w-[730px] text-muted-foreground"
-          >
-            <defs>
-              <marker
-                id="repository-task-arrow"
-                markerWidth="8"
-                markerHeight="8"
-                refX="7"
-                refY="4"
-                orient="auto"
-              >
-                <path d="M0,0 L8,4 L0,8 z" fill="currentColor" />
-              </marker>
-            </defs>
-            {task.graph.edges.map((edge) => {
-              const source = positions.get(edge.source);
-              const target = positions.get(edge.target);
-              if (!source || !target) return null;
-              const fromX = source.x + 92;
-              const toX = target.x - 92;
-              return (
-                <path
-                  key={edge.id}
-                  d={`M ${fromX} ${source.y + 28} C ${(fromX + toX) / 2} ${source.y + 28}, ${(fromX + toX) / 2} ${target.y + 28}, ${toX} ${target.y + 28}`}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeDasharray={edge.kind === "merge" ? "5 4" : undefined}
-                  markerEnd="url(#repository-task-arrow)"
-                />
-              );
-            })}
-            {nodes.map((node) => {
-              const point = positions.get(node.id)!;
-              const member =
-                node.kind === "repository"
-                  ? task.snapshot.members.find((member) => member.threadId === node.threadId)
-                  : undefined;
-              const fullTitle = node.title || pretty(node.kind);
-              const label = (member && projectById.get(member.projectId)?.title) || fullTitle;
-              return (
-                <g key={node.id}>
-                  <title>{fullTitle}</title>
-                  <rect
-                    x={point.x - 92}
-                    y={point.y}
-                    width="184"
-                    height="58"
-                    rx="10"
-                    className="fill-card stroke-border"
-                  />
-                  <foreignObject x={point.x - 80} y={point.y + 10} width="160" height="38">
-                    <div className="space-y-1 text-center">
-                      <p aria-label={fullTitle} className="truncate text-xs text-foreground">
-                        {label}
-                      </p>
-                      <p
-                        aria-label={pretty(node.status)}
-                        className="truncate text-3xs text-muted-foreground"
-                      >
-                        {pretty(node.status)}
-                      </p>
-                    </div>
-                  </foreignObject>
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-      ) : null}
-      <div className="grid gap-2">
-        {nodes.map((node) => (
-          <article key={node.id} className="rounded-lg border border-border bg-card p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{node.title || pretty(node.kind)}</p>
-                <p className="text-xs text-muted-foreground">
-                  {pretty(node.kind)}
-                  {node.origin ? ` · ${pretty(node.origin)}` : ""}
-                  {node.role ? ` · ${node.role}` : ""}
-                  {node.modelSelection ? ` · ${node.modelSelection.model}` : ""}
-                </p>
-              </div>
-              <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs capitalize">
-                {pretty(node.status)}
-              </span>
-            </div>
-            {node.threadId ? (
-              <div className="mt-2 flex gap-2">
-                <Button size="xs" variant="outline" onClick={() => onOpenThread(node.threadId!)}>
-                  Open session
-                </Button>
-                {node.kind === "repository" ? (
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => onOpenThread(node.threadId!, true)}
-                  >
-                    Open diff
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-          </article>
-        ))}
-      </div>
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Recorded links</h3>
-        {task.graph.edges.length ? (
-          <ul className="space-y-1 text-sm">
-            {task.graph.edges.map((edge) => (
-              <li key={edge.id} className="rounded-md bg-muted/50 px-3 py-2">
-                <span>{byId.get(edge.source)?.title ?? "Unavailable"}</span>
-                <span className="px-2 text-muted-foreground">→</span>
-                <span>{byId.get(edge.target)?.title ?? "Unavailable"}</span>
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {pretty(edge.kind)} · {pretty(edge.status)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No execution links have been recorded yet.
-          </p>
-        )}
-      </div>
-    </section>
-  );
 }
 
 export function RepositoryTasksPage({
@@ -1158,7 +999,15 @@ export function RepositoryTasksPage({
                       </article>
                     ))}
                   </div>
-                  <GraphView task={task} projectById={projectById} onOpenThread={openThread} />
+                  {environmentId ? (
+                    <RepositoryTaskGraph
+                      environmentId={environmentId}
+                      task={task}
+                      projectById={projectById}
+                      canOperate={canOperate}
+                      onOpenThread={openThread}
+                    />
+                  ) : null}
                 </>
               ) : detailQuery.error ? (
                 <p role="alert" className="text-sm text-destructive">
