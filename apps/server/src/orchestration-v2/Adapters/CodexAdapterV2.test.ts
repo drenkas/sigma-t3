@@ -173,6 +173,31 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect("lets workspace-write turns write a project's additional folders", () =>
+    Effect.gen(function* () {
+      const build = (runtimeMode: "approval-required" | "auto") =>
+        CodexAdapterV2.buildCodexTurnStartParams({
+          nativeThreadId: `native-folders-${runtimeMode}`,
+          codexInput: [{ type: "text", text: "test" }],
+          runtimePolicy: {
+            runtimeMode,
+            interactionMode: "default",
+            cwd: "/work/web",
+            additionalDirectories: ["/work/api"],
+          },
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        });
+
+      assert.deepStrictEqual((yield* build("auto")).sandboxPolicy, {
+        type: "workspaceWrite",
+        writableRoots: ["/work/api"],
+      });
+      assert.deepStrictEqual((yield* build("approval-required")).sandboxPolicy, {
+        type: "readOnly",
+      });
+    }),
+  );
+
   it.effect("sends MCP app model context as untrusted Codex context", () =>
     Effect.gen(function* () {
       const policy = { runtimeMode: "full-access", interactionMode: "default", cwd: null } as const;

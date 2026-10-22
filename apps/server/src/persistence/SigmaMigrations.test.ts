@@ -25,7 +25,7 @@ describe("Sigma migrations", () => {
       yield* runMigrations();
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [],
+        sigma: [[4, "ProjectAdditionalWorkspaceRoots"]],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -41,7 +41,7 @@ describe("Sigma migrations", () => {
 
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [],
+        sigma: [[4, "ProjectAdditionalWorkspaceRoots"]],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

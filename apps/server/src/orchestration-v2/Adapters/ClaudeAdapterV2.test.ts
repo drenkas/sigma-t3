@@ -249,6 +249,25 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });
 
+  it("opens a project's additional folders next to its working directory", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-additional-folders",
+      resume: false,
+      cwd: "/work/web",
+      additionalDirectories: ["/work/api", "/work/docs"],
+      attachmentsDir: "/state/attachments",
+      settings: AUTO_COMPACT_CLAUDE_SETTINGS,
+    });
+    assert.equal(options.cwd, "/work/web");
+    assert.deepEqual(options.additionalDirectories, [
+      "/work/web",
+      "/work/api",
+      "/work/docs",
+      "/state/attachments",
+    ]);
+  });
+
   it("gives delegated children Claude's subagent prompt cache TTL", () => {
     const lineage = (relationshipToParent: "fork" | "subagent" | null) => ({
       lineage: {

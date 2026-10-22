@@ -1225,6 +1225,23 @@ describe("CursorAdapterV2", () => {
     assert.notInclude(logged, "secret-cursor-mcp-token");
   });
 
+  it("opens a project's additional folders as workspace folders", () => {
+    const options = makeCursorAgentOptions({
+      modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "composer-2.5" },
+      runtimePolicy: {
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: "/work/web",
+        additionalDirectories: ["/work/api"],
+      },
+      threadId: ThreadId.make("thread-folders"),
+      mcpSession: undefined,
+      platform: "linux",
+    });
+    assert.equal(options.local?.cwd, "/work/web");
+    assert.deepEqual(options.local?.dirs, ["/work/api"]);
+  });
+
   it("recognizes direct and SDK-wrapped abort failures as cancellation", () => {
     assert.isTrue(CursorAgentSdk.isCursorCancellationError({ name: "AbortError" }));
     assert.isTrue(

@@ -95,6 +95,7 @@ const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
             defaultModelSelection: null,
             defaultThreadEnvMode: null,
             autoPull: false,
+            additionalWorkspaceRoots: ["/api-root"],
             faviconPath: null,
             projectIcon: null,
             scripts: [],
@@ -124,6 +125,22 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(yield* modeFor(grokInstanceId, "auto"), "auto");
       assert.equal(yield* modeFor(grokInstanceId, "full-access"), "full-access");
       assert.equal(yield* modeFor(providerInstanceId, "auto-accept-edits"), "auto-accept-edits");
+    }),
+  );
+
+  it.effect("gives the agent the project's additional folders from any checkout", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const resolve = (worktreePath: string | null) =>
+        policy.resolve({ thread: makeThread({ now, worktreePath }), modelSelection });
+
+      const root = yield* resolve(null);
+      assert.equal(root.cwd, "/project-root");
+      assert.deepStrictEqual(root.additionalDirectories, ["/api-root"]);
+      const worktree = yield* resolve("/worktrees/feature");
+      assert.equal(worktree.cwd, "/worktrees/feature");
+      assert.deepStrictEqual(worktree.additionalDirectories, ["/api-root"]);
     }),
   );
 });

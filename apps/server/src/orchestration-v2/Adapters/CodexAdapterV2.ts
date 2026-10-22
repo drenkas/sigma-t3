@@ -734,10 +734,22 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       input.runtimePolicy.approvalPolicy === undefined
         ? runtimeModeDefaults.approvalPolicy
         : yield* decodeTurnApprovalPolicy(input.runtimePolicy.approvalPolicy);
-    const sandboxPolicy =
+    const requestedSandboxPolicy =
       input.runtimePolicy.sandboxPolicy === undefined
         ? runtimeModeDefaults.sandboxPolicy
         : yield* decodeTurnSandboxPolicy(input.runtimePolicy.sandboxPolicy);
+    // Codex reads outside the workspace already; a project's other folders need write access.
+    const additionalDirectories = input.runtimePolicy.additionalDirectories ?? [];
+    const sandboxPolicy =
+      requestedSandboxPolicy?.type === "workspaceWrite" && additionalDirectories.length > 0
+        ? {
+            ...requestedSandboxPolicy,
+            writableRoots: [
+              ...(requestedSandboxPolicy.writableRoots ?? []),
+              ...additionalDirectories,
+            ],
+          }
+        : requestedSandboxPolicy;
     const selectedEffort =
       getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort") ??
       codexDefaultReasoningEffortOverride(input.modelSelection.model);

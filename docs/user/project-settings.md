@@ -222,6 +222,18 @@ When no image is found, web and desktop show a two-character monogram with a col
 from the icon palette, derived from the saved project name. For example, `Nebula` becomes `NA`,
 `Silver Orchard` becomes `SO`, and `M7 Forge` becomes `M7`.
 
+## Projects with several folders
+
+A project can span more than one folder, for example a web app and the API it calls. Select the
+project, open Project, and add folders under **Folders**. Type an absolute path on that machine,
+or browse for one on desktop. New turns in any of the project's threads can read and edit every
+folder.
+
+The project's own folder stays the agent's working directory. Diffs, checkpoints, worktrees and
+branches only cover that folder, so commit changes in the other folders yourself. Claude, Codex,
+Cursor, Grok, Antigravity and ACP agents that support extra folders receive them. OpenCode, Pi
+and Muse only get the working folder.
+
 ## Keep the default branch current
 
 In Source Control, enable **Automatically pull** to keep the default-branch checkout up to date

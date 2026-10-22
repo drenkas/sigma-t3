@@ -34,6 +34,7 @@ export interface ProjectMetaUpdateCommand {
   readonly defaultModelSelection?: ModelSelection | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
+  readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
@@ -195,6 +196,13 @@ export function planProjectCommand(input: {
         const conflict = requireWorkspaceAvailable(command.workspaceRoot);
         if (conflict !== undefined) return Result.fail(conflict);
       }
+      if (command.additionalWorkspaceRoots !== undefined) {
+        const root = command.workspaceRoot ?? project.workspaceRoot;
+        const folders = new Set(command.additionalWorkspaceRoots);
+        if (folders.has(root) || folders.size !== command.additionalWorkspaceRoots.length) {
+          return invariant("Additional folders must be distinct and differ from the project root.");
+        }
+      }
       return Result.succeed({
         ...base,
         type: "project.meta-updated",
@@ -209,6 +217,9 @@ export function planProjectCommand(input: {
             ? {}
             : { defaultThreadEnvMode: command.defaultThreadEnvMode }),
           ...(command.autoPull === undefined ? {} : { autoPull: command.autoPull }),
+          ...(command.additionalWorkspaceRoots === undefined
+            ? {}
+            : { additionalWorkspaceRoots: command.additionalWorkspaceRoots }),
           ...(command.faviconPath === undefined ? {} : { faviconPath: command.faviconPath }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
