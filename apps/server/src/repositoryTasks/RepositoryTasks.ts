@@ -11,6 +11,7 @@ import {
   type RepositoryTask,
   type RepositoryTaskMemberSnapshot,
   type RepositoryTaskMerge,
+  type RepositoryTaskMergePreview,
   type ModelSelection,
   type ProjectId,
   type OrchestrationV2Run,
@@ -127,6 +128,17 @@ export class RepositoryTasks extends Context.Service<
     readonly acknowledge: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
     readonly archive: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
     readonly unarchive: (taskId: string) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
+    /** Shows what an agent worktree merge wrote, or would write if it were applied now. */
+    readonly previewMerge: (
+      taskId: string,
+      sourceThreadId: ThreadId,
+    ) => Effect.Effect<RepositoryTaskMergePreview, RepositoryTaskError>;
+    /** Writes a conflicted or failed merge once it plans cleanly and matches the reviewed preview. */
+    readonly applyMerge: (
+      taskId: string,
+      sourceThreadId: ThreadId,
+      token: string,
+    ) => Effect.Effect<RepositoryTask, RepositoryTaskError>;
     readonly reconcile: (taskId: string) => Effect.Effect<void, RepositoryTaskError>;
     readonly recover: Effect.Effect<void, RepositoryTaskError>;
     readonly taskIdsForThread: (
@@ -443,6 +455,18 @@ const make = Effect.gen(function* () {
           target,
           kind: "context_transfer",
           status: transfer.status,
+        });
+    }
+    for (const merge of merges) {
+      const source = `thread:${merge.source_thread_id}`;
+      const snap = snapshot.members.find((entry) => entry.projectId === merge.project_id);
+      if (snap !== undefined && visited.has(source))
+        graph.edges.push({
+          id: `merge:${merge.source_thread_id}`,
+          source,
+          target: `thread:${snap.threadId}`,
+          kind: "merge",
+          status: merge.status,
         });
     }
     const coordinatorStatus =
@@ -883,33 +907,138 @@ const make = Effect.gen(function* () {
         merged_tree: ready.mergedTree,
         files_json: encodeMergeFiles(ready.files),
       });
-      const applied = yield* merger.apply(cwd, ready).pipe(
-        Effect.catch((error) =>
-          merger.observe(cwd, ready.oursTree, ready.mergedTree).pipe(
-            Effect.map((observation) => ({ observation, error: error.message })),
-            Effect.orElseSucceed(() => ({
-              observation: "diverged" as const,
-              error: error.message,
-            })),
-          ),
-        ),
-        Effect.map((result) =>
-          typeof result === "string" ? { observation: result, error: null } : result,
-        ),
-      );
-      const status: RepositoryTaskMerge["status"] =
-        applied.observation === "after"
-          ? "applied"
-          : applied.observation === "before"
-            ? "failed"
-            : "uncertain";
-      yield* sql`UPDATE repository_task_merges SET status = ${status}, error = ${applied.error} WHERE task_id = ${taskId} AND source_thread_id = ${source.threadId}`.pipe(
-        Effect.mapError(persistenceError),
-      );
+      yield* writeMerge(taskId, source.threadId, cwd, ready);
     }
     return yield* sql<MergeRow>`
       SELECT * FROM repository_task_merges WHERE task_id = ${taskId} AND project_id = ${member.project_id} ORDER BY ordinal
     `.pipe(Effect.mapError(persistenceError));
+  });
+  /** Writes a merge already recorded as applying, then records what the files show. */
+  const writeMerge = Effect.fn("RepositoryTasks.writeMerge")(function* (
+    taskId: string,
+    sourceThreadId: ThreadId,
+    cwd: string,
+    ready: Extract<Merge.MergePlan, { status: "ready" }>,
+  ) {
+    const applied = yield* merger.apply(cwd, ready).pipe(
+      Effect.catch((error) =>
+        merger.observe(cwd, ready.oursTree, ready.mergedTree).pipe(
+          Effect.map((observation) => ({ observation, error: error.message })),
+          Effect.orElseSucceed(() => ({
+            observation: "diverged" as const,
+            error: error.message,
+          })),
+        ),
+      ),
+      Effect.map((result) =>
+        typeof result === "string" ? { observation: result, error: null } : result,
+      ),
+    );
+    const status: RepositoryTaskMerge["status"] =
+      applied.observation === "after"
+        ? "applied"
+        : applied.observation === "before"
+          ? "failed"
+          : "uncertain";
+    yield* sql`UPDATE repository_task_merges SET status = ${status}, error = ${applied.error} WHERE task_id = ${taskId} AND source_thread_id = ${sourceThreadId}`.pipe(
+      Effect.mapError(persistenceError),
+    );
+  });
+  const mergeContext = Effect.fn("RepositoryTasks.mergeContext")(function* (
+    taskId: string,
+    sourceThreadId: ThreadId,
+  ) {
+    const { row, snapshot, members, merges } = yield* readTask(taskId);
+    const merge = merges.find((entry) => entry.source_thread_id === sourceThreadId);
+    const member = members.find((entry) => entry.project_id === merge?.project_id);
+    const snap = snapshot.members.find((entry) => entry.projectId === merge?.project_id);
+    if (!merge || !member || !snap) return yield* fail("not-found");
+    const cwd = yield* fs.realPath(memberCwd(member, snap)).pipe(Effect.mapError(executionError));
+    return { row, merge, cwd };
+  });
+  // Conflicted and failed merges are planned again from the files, so a conflict the user
+  // resolved in either workspace previews (and applies) as the clean merge it has become.
+  const replanMerge = Effect.fn("RepositoryTasks.replanMerge")(function* (
+    merge: MergeRow,
+    cwd: string,
+  ) {
+    const source = yield* fs
+      .realPath(merge.worktree_path)
+      .pipe(Effect.mapError(() => fail("not-found")));
+    return yield* merger.plan(cwd, source).pipe(Effect.mapError(executionError));
+  });
+  const mergeToken = (plan: { oursTree: string; mergedTree: string }) =>
+    `${plan.oursTree}:${plan.mergedTree}`;
+  const previewMerge = Effect.fn("RepositoryTasks.previewMerge")(function* (
+    taskId: string,
+    sourceThreadId: ThreadId,
+  ) {
+    const { merge, cwd } = yield* mergeContext(taskId, sourceThreadId);
+    if (merge.status === "applied") {
+      if (merge.ours_tree === null || merge.merged_tree === null) return yield* fail("persistence");
+      const files = yield* merger
+        .preview(cwd, {
+          status: "ready",
+          oursTree: merge.ours_tree,
+          mergedTree: merge.merged_tree,
+        })
+        .pipe(Effect.mapError(executionError));
+      return {
+        sourceThreadId,
+        status: "applied",
+        files,
+        token: null,
+      } satisfies RepositoryTaskMergePreview;
+    }
+    if (merge.status === "empty")
+      return {
+        sourceThreadId,
+        status: "empty",
+        files: [],
+        token: null,
+      } satisfies RepositoryTaskMergePreview;
+    // An interrupted merge is settled by acknowledgement, never by a fresh plan.
+    if (merge.status !== "conflict" && merge.status !== "failed") return yield* fail("conflict");
+    const plan = yield* replanMerge(merge, cwd);
+    if (plan.status === "empty")
+      return {
+        sourceThreadId,
+        status: "empty",
+        files: [],
+        token: null,
+      } satisfies RepositoryTaskMergePreview;
+    const files = yield* merger.preview(cwd, plan).pipe(Effect.mapError(executionError));
+    return {
+      sourceThreadId,
+      status: plan.status,
+      files,
+      token: plan.status === "ready" ? mergeToken(plan) : null,
+    } satisfies RepositoryTaskMergePreview;
+  });
+  const applyReviewedMerge = Effect.fn("RepositoryTasks.applyReviewedMerge")(
+    function* (taskId: string, sourceThreadId: ThreadId, token: string) {
+      const { row, merge, cwd } = yield* mergeContext(taskId, sourceThreadId);
+      if (row.state !== "active" || (merge.status !== "conflict" && merge.status !== "failed"))
+        return yield* fail("conflict");
+      const plan = yield* replanMerge(merge, cwd);
+      if (plan.status !== "ready" || mergeToken(plan) !== token) return yield* fail("conflict");
+      yield* sql`UPDATE repository_task_merges SET status = 'applying', base_commit = ${plan.baseCommit}, ours_tree = ${plan.oursTree}, merged_tree = ${plan.mergedTree}, files_json = ${encodeMergeFiles(plan.files)}, error = NULL WHERE task_id = ${taskId} AND source_thread_id = ${sourceThreadId}`.pipe(
+        Effect.mapError(persistenceError),
+      );
+      yield* writeMerge(taskId, sourceThreadId, cwd, plan);
+    },
+    (effect, taskId) => locks.withLock(taskId, effect),
+  );
+  const applyMerge = Effect.fn("RepositoryTasks.applyMerge")(function* (
+    taskId: string,
+    sourceThreadId: ThreadId,
+    token: string,
+  ) {
+    yield* applyReviewedMerge(taskId, sourceThreadId, token);
+    // The last unsettled merge may have been holding the task open.
+    yield* reconcile(taskId);
+    yield* notifyChanged;
+    return yield* get(taskId);
   });
   const mergeSummary = (merges: ReadonlyArray<MergeRow>) =>
     merges.length === 0
@@ -1203,6 +1332,8 @@ const make = Effect.gen(function* () {
     acknowledge,
     archive: (taskId) => setArchived(taskId, true),
     unarchive: (taskId) => setArchived(taskId, false),
+    previewMerge,
+    applyMerge,
     reconcile,
     recover: recover(),
     taskIdsForThread,

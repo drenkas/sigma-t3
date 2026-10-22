@@ -42,6 +42,7 @@ export const RPC_REQUIRED_SCOPES = {
   [REPOSITORY_TASK_METHODS.groupsList]: AuthOrchestrationReadScope,
   [REPOSITORY_TASK_METHODS.tasksList]: AuthOrchestrationReadScope,
   [REPOSITORY_TASK_METHODS.tasksGet]: AuthOrchestrationReadScope,
+  [REPOSITORY_TASK_METHODS.tasksMergePreview]: AuthOrchestrationReadScope,
   [REPOSITORY_TASK_METHODS.tasksSubscribe]: AuthOrchestrationReadScope,
   ...CLIENT_GUARDED_RPC_SCOPES,
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,

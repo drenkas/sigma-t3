@@ -98,8 +98,52 @@ it.layer(layer(process.cwd()))("repository task worktree merge", (it) => {
 
       const plan = yield* merger.plan(root, agent);
 
-      assert.deepEqual(plan, { status: "conflict", files: ["shared.txt"] });
+      assert.equal(plan.status, "conflict");
+      if (plan.status !== "conflict") return;
+      assert.deepEqual(plan.files, ["shared.txt"]);
       assert.equal(yield* fs.readFileString(`${root}/shared.txt`), "member\ntwo\nthree\n");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("previews a conflict three ways and a clean merge as a patch", () =>
+    Effect.gen(function* () {
+      const { fs, root, worktree, merger } = yield* fixture();
+      const agent = yield* worktree("agent");
+      yield* fs.writeFileString(`${agent}/shared.txt`, "agent\ntwo\nthree\n");
+      yield* fs.writeFileString(`${agent}/added.txt`, "new file\n");
+      yield* fs.writeFileString(`${root}/shared.txt`, "member\ntwo\nthree\n");
+
+      const conflict = yield* merger.plan(root, agent);
+      assert.equal(conflict.status, "conflict");
+      if (conflict.status !== "conflict") return;
+      const [added, shared] = yield* merger.preview(root, conflict);
+      assert.deepInclude(added, { path: "added.txt", status: "ready" });
+      assert.include(added!.text, "+new file");
+      assert.deepInclude(shared, { path: "shared.txt", status: "conflict" });
+      for (const marker of [
+        "<<<<<<< root",
+        "member",
+        "||||||| base",
+        "one",
+        "agent",
+        ">>>>>>> worker",
+      ])
+        assert.include(shared!.text, marker);
+
+      // The member gives up its own edit; the same agent work now merges cleanly.
+      yield* fs.writeFileString(`${root}/shared.txt`, "one\ntwo\nthree\n");
+      const ready = yield* merger.plan(root, agent);
+      assert.equal(ready.status, "ready");
+      if (ready.status !== "ready") return;
+      const patches = yield* merger.preview(root, ready);
+      assert.deepEqual(
+        patches.map((file) => [file.path, file.status]),
+        [
+          ["added.txt", "ready"],
+          ["shared.txt", "ready"],
+        ],
+      );
+      assert.include(patches[1]!.text, "+agent");
     }).pipe(Effect.scoped),
   );
 

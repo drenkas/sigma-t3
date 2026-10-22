@@ -7,6 +7,9 @@ import {
   RepositoryTaskCreateInput,
   RepositoryTaskIdInput,
   RepositoryTaskListInput,
+  RepositoryTaskMergeApplyInput,
+  RepositoryTaskMergeInput,
+  RepositoryTaskMergePreview,
   RepositoryTaskError,
 } from "./repositoryTasks.ts";
 import {
@@ -1852,6 +1855,17 @@ const WsRepositoryTasksUnarchiveRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksUnar
   error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
 });
 
+const WsRepositoryTasksMergePreviewRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksMergePreview, {
+  payload: RepositoryTaskMergeInput,
+  success: RepositoryTaskMergePreview,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+const WsRepositoryTasksMergeApplyRpc = Rpc.make(REPOSITORY_TASK_METHODS.tasksMergeApply, {
+  payload: RepositoryTaskMergeApplyInput,
+  success: RepositoryTask,
+  error: Schema.Union([RepositoryTaskError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListRpc = Rpc.make(WS_METHODS.scheduledTasksList, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -1958,6 +1972,8 @@ export const WsRepositoryTasksRpcGroup = RpcGroup.make(
   WsRepositoryTasksAcknowledgeRpc,
   WsRepositoryTasksArchiveRpc,
   WsRepositoryTasksUnarchiveRpc,
+  WsRepositoryTasksMergePreviewRpc,
+  WsRepositoryTasksMergeApplyRpc,
   WsRepositoryTasksSubscribeRpc,
 ).middleware(RpcScopeAuthorization);
 
