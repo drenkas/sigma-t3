@@ -10,6 +10,8 @@ If a selected provider model or one of its advertised options becomes unavailabl
 
 Reopen a task from its task list to follow participant states, open native sessions or diffs, and inspect the recorded execution graph. The Stop action applies to the whole task.
 
+When an agent inside a member session worked in its own worktree, the member's result brings that work back into the member workspace before it reaches the coordinator. Only a clean three-way merge is written, and it only changes files: nothing is staged or committed, and your branch stays where it was. A merge with conflicts writes nothing; the member shows the conflicting files and keeps the task open until you resolve them. If the server stopped in the middle of writing a merge, the task shows as uncertain, and acknowledging it judges the merge from the files on disk without writing it again.
+
 If the server loses track of whether part of a task started, for example after a crash during launch, the task shows as uncertain and never retries on its own. Choose **Acknowledge observed state** to settle it from what the server recorded: launches it can confirm continue, the rest are marked abandoned and do not start again. A task whose coordinator never started is stopped instead.
 
 Archive a finished or stopped task to hide it from the task list; the **Archived** filter shows archived tasks, and **Unarchive** brings one back. Running or uncertain tasks cannot be archived.
