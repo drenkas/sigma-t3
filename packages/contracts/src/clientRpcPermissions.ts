@@ -21,6 +21,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [REPOSITORY_TASK_METHODS.tasksAcknowledge]: AuthOrchestrationOperateScope,
   [REPOSITORY_TASK_METHODS.tasksArchive]: AuthOrchestrationOperateScope,
   [REPOSITORY_TASK_METHODS.tasksUnarchive]: AuthOrchestrationOperateScope,
+  [REPOSITORY_TASK_METHODS.tasksMergeApply]: AuthOrchestrationOperateScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,

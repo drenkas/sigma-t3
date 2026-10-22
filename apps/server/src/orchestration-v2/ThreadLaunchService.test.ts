@@ -2954,6 +2954,62 @@ it.effect.each(["clean", "conflict"] as const)(
     }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("repository task applies a conflicted merge only from the reviewed preview", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeRepositoryTaskHarness(false, false, true);
+    yield* Effect.gen(function* () {
+      const tasks = yield* RepositoryTasks.RepositoryTasks;
+      const fs = yield* FileSystem.FileSystem;
+      const memberRoot = harness.testProjects[0]!.workspaceRoot;
+      const { task, settle } = yield* runRepositoryTaskWithAgentWorktree(
+        harness,
+        (root, worktree) =>
+          Effect.gen(function* () {
+            yield* fs.writeFileString(`${worktree}/agent.txt`, "agent result\n");
+            yield* fs.writeFileString(`${root}/agent.txt`, "member result\n");
+          }),
+      );
+      yield* settle(task.snapshot.coordinatorThreadId);
+      yield* tasks.reconcile(harness.input.id);
+      const sourceThreadId = (yield* tasks.get(harness.input.id)).members.find(
+        (entry) => entry.snapshot.projectId === projectId,
+      )!.merges[0]!.sourceThreadId;
+
+      const conflict = yield* tasks.previewMerge(harness.input.id, sourceThreadId);
+      assert.equal(conflict.status, "conflict");
+      assert.isNull(conflict.token);
+      assert.include(conflict.files[0]!.text, "||||||| base");
+
+      // The user resolves it by dropping the member's own version of the file.
+      yield* fs.remove(`${memberRoot}/agent.txt`);
+      const ready = yield* tasks.previewMerge(harness.input.id, sourceThreadId);
+      assert.equal(ready.status, "ready");
+      assert.include(ready.files[0]!.text, "+agent result");
+
+      yield* fs.writeFileString(`${memberRoot}/other.txt`, "changed after review\n");
+      const stale = yield* tasks
+        .applyMerge(harness.input.id, sourceThreadId, ready.token!)
+        .pipe(Effect.flip);
+      assert.equal(stale.reason, "conflict");
+      assert.isFalse(yield* fs.exists(`${memberRoot}/agent.txt`));
+
+      const reviewed = yield* tasks.previewMerge(harness.input.id, sourceThreadId);
+      const applied = yield* tasks.applyMerge(harness.input.id, sourceThreadId, reviewed.token!);
+      assert.equal(yield* fs.readFileString(`${memberRoot}/agent.txt`), "agent result\n");
+      assert.equal(applied.state, "finished");
+      assert.deepInclude(
+        applied.graph.edges.find((edge) => edge.kind === "merge"),
+        { source: `thread:${sourceThreadId}`, status: "applied" },
+      );
+      assert.equal((yield* tasks.previewMerge(harness.input.id, sourceThreadId)).status, "applied");
+      const again = yield* tasks
+        .applyMerge(harness.input.id, sourceThreadId, reviewed.token!)
+        .pipe(Effect.flip);
+      assert.equal(again.reason, "conflict");
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect(
   "repository task recovery marks an interrupted merge uncertain and acknowledgement never writes it again",
   () =>

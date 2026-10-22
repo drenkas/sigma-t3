@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   detail: {} as Record<string, unknown>,
   commandAtoms: [] as unknown[],
   commandSucceeds: false,
+  preview: null as unknown,
 }));
 
 vi.mock(import("~/state/environments"), async (original) => ({
@@ -48,10 +49,16 @@ vi.mock(import("~/state/session"), async (original) => ({
 }));
 vi.mock(import("~/state/query"), async (original) => ({
   ...(await original()),
-  useEnvironmentQuery: ((atom: unknown) => {
+  useEnvironmentQuery: ((atom: { label?: readonly unknown[] } | null) => {
     state.queryInputs.push(atom);
+    const isPreview = String(atom?.label?.[0] ?? "").includes("merge-preview");
     return {
-      data: atom === null ? null : { groups: state.groups, tasks: [], ...state.detail },
+      data:
+        atom === null
+          ? null
+          : isPreview
+            ? state.preview
+            : { groups: state.groups, tasks: [], ...state.detail },
       dataUpdatedAt: 0,
       failure: null,
       isSuccess: true,
@@ -72,8 +79,20 @@ vi.mock(import("~/state/use-atom-command"), async (original) => ({
   }) as never,
 }));
 
+// The real file view loads the diff highlighter, which browser tests keep out.
+vi.mock(import("./RepositoryTaskMergeFiles"), () => ({
+  default: ({ files }) => (
+    <ul>
+      {files.map((file) => (
+        <li key={file.path}>{`${file.path}: ${file.status}`}</li>
+      ))}
+    </ul>
+  ),
+}));
+
 function setup() {
   state.detail = {};
+  state.preview = null;
   state.commandAtoms = [];
   state.commandSucceeds = false;
 }
@@ -85,7 +104,12 @@ function replaceProviderCatalog() {
 import { repositoryTaskEnvironment } from "../../state/repositoryTasks";
 import { RepositoryTasksPage } from "./RepositoryTasksPage";
 
-function taskDetail(state: string, launchState: string, archivedAt: string | null = null) {
+function taskDetail(
+  state: string,
+  launchState: string,
+  archivedAt: string | null = null,
+  merges: unknown[] = [],
+) {
   return {
     snapshot: {
       id: "task-a",
@@ -117,7 +141,7 @@ function taskDetail(state: string, launchState: string, archivedAt: string | nul
         preparedRevision: null,
         pendingApproval: false,
         deliveryState: "pending",
-        merges: [],
+        merges,
       },
     ],
     graph: { nodes: [], edges: [] },
@@ -519,5 +543,54 @@ describe("RepositoryTasksPage capability guard", () => {
     await screen.rerender(<RepositoryTasksPage taskId="task-a" onTaskChange={() => {}} />);
     await userEvent.click(screen.getByRole("button", { name: "Unarchive" }));
     expect(state.commandAtoms.at(-1)).toBe(repositoryTaskEnvironment.unarchiveTask);
+  });
+
+  it("applies a conflicted agent merge only from a reviewed clean preview", async () => {
+    setup();
+    state.commandInputs = [];
+    state.commandSucceeds = true;
+    state.capability = true;
+    state.providers = [];
+    replaceProviderCatalog();
+    state.projects = [];
+    state.groups = [];
+    const merge = {
+      sourceThreadId: "agent-thread",
+      worktreePath: "/work/agent",
+      status: "conflict",
+      files: ["agent.txt"],
+      error: null,
+    };
+    state.detail = taskDetail("active", "dispatched", null, [merge]);
+    state.preview = {
+      sourceThreadId: "agent-thread",
+      status: "conflict",
+      files: [{ path: "agent.txt", status: "conflict", text: "<<<<<<< root" }],
+      token: null,
+    };
+    await using screen = await render(
+      <RepositoryTasksPage taskId="task-a" onTaskChange={() => {}} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await expect.element(screen.getByText("agent.txt: conflict")).toBeVisible();
+    await expect.element(screen.getByText(/Nothing was written/)).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "Apply to workspace" }))
+      .not.toBeInTheDocument();
+
+    state.preview = {
+      sourceThreadId: "agent-thread",
+      status: "ready",
+      files: [{ path: "agent.txt", status: "ready", text: "+agent" }],
+      token: "ours:merged",
+    };
+    await screen.rerender(<RepositoryTasksPage taskId="task-a" onTaskChange={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "Apply to workspace" }));
+    expect(state.commandAtoms.at(-1)).toBe(repositoryTaskEnvironment.applyMerge);
+    expect(state.commandInputs.at(-1)).toEqual({
+      environmentId: state.environmentId,
+      input: { taskId: "task-a", sourceThreadId: "agent-thread", token: "ours:merged" },
+    });
   });
 });

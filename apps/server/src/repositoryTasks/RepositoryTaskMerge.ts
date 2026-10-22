@@ -31,7 +31,15 @@ export class RepositoryTaskMergeError extends Schema.TaggedError<RepositoryTaskM
 
 export type MergePlan =
   | { readonly status: "empty" }
-  | { readonly status: "conflict"; readonly files: ReadonlyArray<string> }
+  | {
+      readonly status: "conflict";
+      readonly baseCommit: string;
+      readonly oursTree: string;
+      readonly theirsTree: string;
+      // Holds conflict markers for the conflicted paths; it is only ever previewed.
+      readonly mergedTree: string;
+      readonly files: ReadonlyArray<string>;
+    }
   | {
       readonly status: "ready";
       readonly baseCommit: string;
@@ -41,6 +49,17 @@ export type MergePlan =
     };
 
 export type Observation = "after" | "before" | "diverged";
+
+/** A ready path carries its unified patch; a conflicted one its diff3 text. Too large → null. */
+export type PreviewFile = {
+  readonly path: string;
+  readonly status: "ready" | "conflict";
+  readonly text: string | null;
+};
+
+// Keeps one preview from flooding the websocket with a huge generated file.
+const PREVIEW_FILE_BYTES = 256 * 1024;
+const PREVIEW_TOTAL_BYTES = 1024 * 1024;
 
 const lines = (stdout: string) => stdout.split("\n").filter(Boolean);
 
@@ -105,7 +124,15 @@ export const make = Effect.gen(function* () {
       allowNonZeroExit: true,
     });
     const [mergedTree = "", ...conflicted] = lines(merged.stdout);
-    if (merged.exitCode === 1) return { status: "conflict", files: conflicted } satisfies MergePlan;
+    if (merged.exitCode === 1)
+      return {
+        status: "conflict",
+        baseCommit,
+        oursTree,
+        theirsTree,
+        mergedTree,
+        files: conflicted,
+      } satisfies MergePlan;
     if (merged.exitCode !== 0)
       return yield* new RepositoryTaskMergeError({ detail: merged.stderr.trim() });
     return {
@@ -164,5 +191,86 @@ export const make = Effect.gen(function* () {
     return yield* observe(cwd, ready.oursTree, ready.mergedTree);
   }, Effect.scoped);
 
-  return { plan, apply, observe };
+  const capture = (operation: string, cwd: string, args: ReadonlyArray<string>) =>
+    git.execute({
+      operation: `RepositoryTaskMerge.${operation}`,
+      cwd,
+      args,
+      allowNonZeroExit: true,
+      maxOutputBytes: PREVIEW_FILE_BYTES,
+      appendTruncationMarker: true,
+    });
+
+  const conflictText = Effect.fn("RepositoryTaskMerge.conflictText")(function* (
+    cwd: string,
+    path: string,
+    sides: Record<"root" | "base" | "worker", string>,
+  ) {
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "sigma-task-merge-" });
+    const inputs: Array<string> = [];
+    for (const [label, tree] of Object.entries(sides)) {
+      const blob = yield* capture("readBlob", cwd, ["cat-file", "blob", `${tree}:${path}`]);
+      if (blob.stdoutTruncated || blob.stdout.includes("\0")) return null;
+      // A side without the file (added or deleted there) merges as an empty file.
+      yield* fs.writeFileString(`${directory}/${label}`, blob.exitCode === 0 ? blob.stdout : "");
+      inputs.push(`${directory}/${label}`);
+    }
+    const merged = yield* capture("mergeFile", cwd, [
+      "merge-file",
+      "-p",
+      "--diff3",
+      "-L",
+      "root",
+      "-L",
+      "base",
+      "-L",
+      "worker",
+      ...inputs,
+    ]);
+    return merged.stdoutTruncated || merged.exitCode < 0 ? null : merged.stdout;
+  }, Effect.scoped);
+
+  /** What a merge writes into `cwd`, file by file, seen from the member's side. */
+  const preview = Effect.fn("RepositoryTaskMerge.preview")(function* (
+    cwd: string,
+    plan:
+      | { readonly status: "ready"; readonly oursTree: string; readonly mergedTree: string }
+      | Extract<MergePlan, { status: "conflict" }>,
+  ) {
+    const conflicted = new Set(plan.status === "conflict" ? plan.files : []);
+    const changed = yield* changedPaths(cwd, plan.oursTree, plan.mergedTree);
+    const paths = [...new Set([...changed, ...conflicted])].toSorted();
+    let budget = PREVIEW_TOTAL_BYTES;
+    const files: Array<PreviewFile> = [];
+    for (const path of paths) {
+      const status = conflicted.has(path) ? "conflict" : "ready";
+      let text: string | null = null;
+      if (budget > 0) {
+        if (plan.status === "conflict" && status === "conflict") {
+          text = yield* conflictText(cwd, path, {
+            root: plan.oursTree,
+            base: `${plan.baseCommit}^{tree}`,
+            worker: plan.theirsTree,
+          });
+        } else {
+          const patch = yield* capture("diffPatch", cwd, [
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-renames",
+            plan.oursTree,
+            plan.mergedTree,
+            "--",
+            path,
+          ]);
+          text = patch.stdoutTruncated ? null : patch.stdout;
+        }
+        budget -= text?.length ?? 0;
+      }
+      files.push({ path, status, text });
+    }
+    return files;
+  });
+
+  return { plan, apply, observe, preview };
 });

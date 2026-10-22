@@ -27,6 +27,10 @@ export const layer = ServerRepositoryTasksRpcGroup.toLayer(
       [REPOSITORY_TASK_METHODS.tasksAcknowledge]: ({ taskId }) => tasks.acknowledge(taskId),
       [REPOSITORY_TASK_METHODS.tasksArchive]: ({ taskId }) => tasks.archive(taskId),
       [REPOSITORY_TASK_METHODS.tasksUnarchive]: ({ taskId }) => tasks.unarchive(taskId),
+      [REPOSITORY_TASK_METHODS.tasksMergePreview]: ({ taskId, sourceThreadId }) =>
+        tasks.previewMerge(taskId, sourceThreadId),
+      [REPOSITORY_TASK_METHODS.tasksMergeApply]: ({ taskId, sourceThreadId, token }) =>
+        tasks.applyMerge(taskId, sourceThreadId, token),
     }),
   ),
 );
