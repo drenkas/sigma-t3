@@ -9,14 +9,14 @@ import {
 
 describe("semver helpers", () => {
   it("matches supported range groups", () => {
-    const range = "^22.16 || ^23.11 || >=24.10";
+    const range = "^22.23.4 || ^24.22.1 || ^26.12.1";
 
-    expect(satisfiesSemverRange("22.16.0", range)).toBe(true);
-    expect(satisfiesSemverRange("23.11.1", range)).toBe(true);
-    expect(satisfiesSemverRange("24.10.0", range)).toBe(true);
-    expect(satisfiesSemverRange("22.15.9", range)).toBe(false);
-    expect(satisfiesSemverRange("23.10.9", range)).toBe(false);
-    expect(satisfiesSemverRange("24.9.9", range)).toBe(false);
+    expect(satisfiesSemverRange("22.23.4", range)).toBe(true);
+    expect(satisfiesSemverRange("24.22.1", range)).toBe(true);
+    expect(satisfiesSemverRange("26.12.1", range)).toBe(true);
+    expect(satisfiesSemverRange("22.23.3", range)).toBe(false);
+    expect(satisfiesSemverRange("24.22.0", range)).toBe(false);
+    expect(satisfiesSemverRange("25.0.0", range)).toBe(false);
   });
 
   it("normalizes and parses shorthand major-only versions", () => {

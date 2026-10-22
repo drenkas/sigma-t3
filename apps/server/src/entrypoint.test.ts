@@ -13,7 +13,7 @@ const makeTempDir = () => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-
 
 describe("isEntrypoint", () => {
   it("matches the entrypoint path when the runtime has no import.meta.main", () => {
-    // Node 22.16, 22.17 and 23.11 are inside `engines.node` but leave it undefined.
+    // Keep the path-based fallback working when the runtime omits import.meta.main.
     const dir = makeTempDir();
     const entry = NodePath.join(dir, "bin.mjs");
     NodeFS.writeFileSync(entry, "");
