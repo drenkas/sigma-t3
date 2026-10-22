@@ -42,6 +42,7 @@ export function RepositoryTaskGraph({
   const nodes = task.graph.nodes.map((node) => ({
     id: node.id,
     title: titleOf(node),
+    role: node.role ?? node.kind,
     subtitle: [node.role ?? pretty(node.kind), node.modelSelection?.model]
       .filter(Boolean)
       .join(" · "),

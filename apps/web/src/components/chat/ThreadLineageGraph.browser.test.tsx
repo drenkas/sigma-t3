@@ -80,6 +80,6 @@ describe("ThreadLineageGraph", () => {
     await userEvent.click(screen.getByRole("button", { name: /^current\./ }));
     await userEvent.click(screen.getByRole("button", { name: /^nested\. Subagent\./ }));
     expect(opened).toEqual(["nested"]);
-    await expect.element(screen.getByText("┈┈ context transfer")).toBeVisible();
+    await expect.element(screen.getByText("context transfer", { exact: true })).toBeVisible();
   });
 });

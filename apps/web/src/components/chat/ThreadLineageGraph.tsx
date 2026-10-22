@@ -9,6 +9,7 @@ import { ExecutionGraph } from "../graph/ExecutionGraph";
 
 const TREE_KINDS: ReadonlySet<string> = new Set(["fork", "subagent"]);
 const SUBTITLES = {
+  current: "This thread",
   parent: "Parent",
   fork: "Fork",
   subagent: "Subagent",
@@ -31,17 +32,17 @@ export function ThreadLineageGraph({
     const thread = graph.nodes.get(id)?.thread ?? null;
     const row = rows.find((entry) => entry.threadId === id);
     const isSubagent = thread?.lineage.relationshipToParent === "subagent";
+    const relationship: keyof typeof SUBTITLES =
+      id === threadId
+        ? "current"
+        : row && row.edge.targetThreadId === row.fromThreadId && row.edge.kind !== "transfer"
+          ? "parent"
+          : (row?.edge.kind ?? "fork");
     return {
       id,
+      role: thread ? relationship : "unavailable",
       title: thread ? (isSubagent ? formatSubagentDisplayTitle(thread.title) : thread.title) : id,
-      subtitle:
-        id === threadId
-          ? "This thread"
-          : !thread
-            ? "Unavailable"
-            : row && row.edge.targetThreadId === row.fromThreadId && row.edge.kind !== "transfer"
-              ? SUBTITLES.parent
-              : SUBTITLES[row?.edge.kind ?? "fork"],
+      subtitle: id === threadId || thread ? SUBTITLES[relationship] : "Unavailable",
       status: thread ? (thread.activityRunStatus ?? thread.status) : "unavailable",
       pendingApproval:
         thread?.pendingRuntimeRequest != null && thread.pendingRuntimeRequest.kind !== "user_input",
