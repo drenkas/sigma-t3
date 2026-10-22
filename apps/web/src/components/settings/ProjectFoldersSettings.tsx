@@ -132,7 +132,7 @@ function MemberFolders({
         <div
           aria-label="Drop folders here"
           className={cn(
-            "mb-3 mt-1 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 py-4 text-xs text-muted-foreground",
+            "mb-3 mt-1 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-accent/70 px-4 py-4 text-xs text-muted-foreground",
             dragging && "border-primary bg-primary/5 text-foreground",
           )}
           onDragOver={(event) => {
