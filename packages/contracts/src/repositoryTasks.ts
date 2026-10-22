@@ -1,5 +1,12 @@
 import * as Schema from "effect/Schema";
-import { IsoDateTime, ProjectId, RunId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  PositiveInt,
+  ProjectId,
+  RunId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import { RuntimeMode, ProviderInteractionMode } from "./providerPolicy.ts";
 import { OrchestrationV2ThreadLaunchWorkspaceStrategy } from "./orchestrationV2.ts";
@@ -91,8 +98,22 @@ export const RepositoryTaskGraphEdge = Schema.Struct({
   id: TrimmedNonEmptyString,
   source: TrimmedNonEmptyString,
   target: TrimmedNonEmptyString,
-  kind: Schema.Literals(["membership", "delegation", "result", "context_transfer", "merge"]),
+  kind: Schema.Literals([
+    "membership",
+    "delegation",
+    "result",
+    "context_transfer",
+    "merge",
+    // Messages one node received, typed by how orchestration took them in.
+    "prompt",
+    "steer",
+    "follow_up",
+  ]),
   status: Schema.String,
+  // Timeline position among the task's timed links, recomputed from persisted records so it
+  // stays the same across restarts. Links with no recorded time have neither.
+  sequence: Schema.NullOr(PositiveInt),
+  at: Schema.NullOr(IsoDateTime),
 });
 export const RepositoryTaskMerge = Schema.Struct({
   sourceThreadId: ThreadId,

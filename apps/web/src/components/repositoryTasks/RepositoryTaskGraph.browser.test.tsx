@@ -33,12 +33,14 @@ const node = (id: string, kind: string, status: string, pendingApproval = false)
   status,
   pendingApproval,
 });
-const edge = (source: string, target: string, kind: string) => ({
-  id: `${kind}:${target}`,
-  source: `thread:${source}`,
+const edge = (source: string, target: string, kind: string, sequence: number | null = null) => ({
+  id: `${kind}:${source}:${target}`,
+  source: source === "user" ? "user" : `thread:${source}`,
   target: `thread:${target}`,
   kind,
   status: "running",
+  sequence,
+  at: sequence === null ? null : `2026-10-22T10:0${sequence}:00.000Z`,
 });
 
 // A repository whose agent delegated again; only the nested agent waits on an approval.
@@ -62,6 +64,9 @@ const task = {
       edge("member", "agent", "delegation"),
       edge("agent", "nested", "delegation"),
       edge("member", "done", "delegation"),
+      edge("member", "coordinator", "result", 3),
+      edge("coordinator", "member", "steer", 2),
+      edge("user", "coordinator", "prompt", 1),
     ],
   },
 } as unknown as RepositoryTask;
@@ -90,6 +95,22 @@ describe("RepositoryTaskGraph", () => {
       "thread:agent",
       "thread:nested",
       "thread:done",
+    ]);
+
+    const timeline = screen.getByRole("list", { name: "Timeline" });
+    await expect.element(timeline).toBeVisible();
+    expect(
+      [...timeline.element().querySelectorAll("li")].map((item) =>
+        // The time itself follows the viewer's locale.
+        [
+          item.firstElementChild!.textContent!.split(" · ")[0],
+          item.lastElementChild!.textContent,
+        ].join(" "),
+      ),
+    ).toEqual([
+      "#1 You→coordinatorprompt · running",
+      "#2 coordinator→Project Asteer · running",
+      "#3 Project A→coordinatorresult · running",
     ]);
 
     await userEvent.click(screen.getByRole("button", { name: /^Project A\./ }));

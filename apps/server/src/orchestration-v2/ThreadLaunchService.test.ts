@@ -2522,7 +2522,7 @@ it.effect(
 );
 
 it.effect(
-  "repository task results reach the coordinator once from both persisted native roots",
+  "repository task results reach the coordinator once and the timeline survives a restart",
   () =>
     Effect.gen(function* () {
       const harness = yield* makeRepositoryTaskHarness();
@@ -2603,6 +2603,46 @@ it.effect(
         );
         assert.equal(after.graph.edges.filter((edge) => edge.kind === "result").length, 2);
         assert.notEqual(after.status, "completed");
+
+        // A restarted server rebuilds the same timeline from the persisted records.
+        const timeline = (graph: typeof after.graph) =>
+          graph.edges
+            .filter((edge) => edge.sequence !== null)
+            .toSorted((left, right) => left.sequence! - right.sequence!)
+            .map(({ id, source, target, kind, sequence, at }) => ({
+              id,
+              source,
+              target,
+              kind,
+              sequence,
+              at,
+            }));
+        const restarted = yield* Effect.service(RepositoryTasks.RepositoryTasks).pipe(
+          Effect.provide(Layer.fresh(RepositoryTasks.layer)),
+        );
+        yield* restarted.recover;
+        const before = timeline(after.graph);
+        assert.deepStrictEqual(timeline((yield* restarted.get(harness.input.id)).graph), before);
+        assert.deepStrictEqual(
+          before.map((entry) => entry.sequence),
+          before.map((_, index) => index + 1),
+        );
+        assert.equal(new Set(before.map((entry) => entry.id)).size, before.length);
+        const coordinatorNode = `thread:${task.snapshot.coordinatorThreadId}`;
+        assert.deepStrictEqual(
+          before.map((entry) => [
+            entry.kind,
+            entry.source === coordinatorNode,
+            entry.target === coordinatorNode,
+          ]),
+          [
+            ["prompt", false, true],
+            ["prompt", true, false],
+            ["prompt", true, false],
+            ["result", false, true],
+            ["result", false, true],
+          ],
+        );
       }).pipe(Effect.provide(harness.layer));
     }).pipe(Effect.provide(NodeServices.layer)),
 );
