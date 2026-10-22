@@ -24,6 +24,8 @@ import {
   type OrchestratorMcpInteractionMode,
   type OrchestratorMcpDeleteScheduledTaskInput,
   type OrchestratorMcpRequestSecretInput,
+  type OrchestratorMcpTeamRolesSetInput,
+  type OrchestratorMcpTeamRolesSetResult,
   type OrchestratorMcpRequestSecretResult,
   type OrchestratorMcpDeleteScheduledTaskResult,
   type OrchestratorMcpListScheduledTasksResult,
@@ -181,6 +183,9 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpRequestSecretInput,
   ) => Effect.Effect<OrchestratorMcpRequestSecretResult, OrchestratorMcpFailure>;
+  readonly setTeamRoles: (
+    input: OrchestratorMcpTeamRolesSetInput,
+  ) => Effect.Effect<OrchestratorMcpTeamRolesSetResult, OrchestratorMcpFailure>;
   readonly listThreads: (
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadListInput,
@@ -2140,7 +2145,28 @@ const make = Effect.gen(function* () {
           scheduledTasks: true,
           maxBatchThreads: 20,
         },
+        teamRoles: settings.teamRoles,
       };
+    }),
+    setTeamRoles: Effect.fn("OrchestratorMcpService.setTeamRoles")(function* (input) {
+      const names = input.roles.map((role) => role.role.toLowerCase());
+      if (new Set(names).size !== names.length) {
+        return yield* failure("invalid_request", "Each role needs its own name.");
+      }
+      const providers = yield* loadProviders;
+      const unknown = input.roles.filter(
+        (role) => !providers.some((provider) => provider.instanceId === role.providerInstanceId),
+      );
+      if (unknown.length > 0) {
+        return yield* failure(
+          "invalid_request",
+          `Unknown provider instance for ${unknown.map((role) => role.role).join(", ")}. Use a providerInstanceId from orchestrator_capabilities.`,
+        );
+      }
+      const settings = yield* serverSettings
+        .updateSettings({ teamRoles: input.roles })
+        .pipe(Effect.mapError(() => failure("orchestration_error", "Unable to save the team.")));
+      return { teamRoles: settings.teamRoles };
     }),
     delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
       const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");

@@ -17,6 +17,8 @@ import {
   OrchestratorMcpScheduleTaskResult,
   OrchestratorMcpTaskCancelInput,
   OrchestratorMcpTaskCancelResult,
+  OrchestratorMcpTeamRolesSetInput,
+  OrchestratorMcpTeamRolesSetResult,
   OrchestratorMcpUpdateScheduledTaskInput,
   OrchestratorMcpTaskStatusInput,
   OrchestratorMcpThreadInterruptInput,
@@ -63,6 +65,19 @@ const OrchestratorCapabilitiesTool = Tool.make("orchestrator_capabilities", {
   .annotate(Tool.Title, "Get orchestration capabilities")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+const TeamRolesSetTool = Tool.make("team_roles_set", {
+  description:
+    "Save the user's agent team: one model for each role, replacing the saved team. Every new conversation starts with this team, and orchestrator_capabilities returns it as teamRoles. Call it only when the user asked to set up or change the team, such as through /roles, after they confirmed the roles and models. Pass [] to clear the team.",
+  parameters: OrchestratorMcpTeamRolesSetInput,
+  success: OrchestratorMcpTeamRolesSetResult,
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Save the agent team")
+  .annotate(Tool.Destructive, true)
   .annotate(Tool.Idempotent, true);
 
 const DelegateTaskTool = Tool.make("delegate_task", {
@@ -275,6 +290,7 @@ const ThreadInterruptTool = Tool.make("t3_thread_interrupt", {
 
 export const OrchestratorToolkit = Toolkit.make(
   OrchestratorCapabilitiesTool,
+  TeamRolesSetTool,
   DelegateTaskTool,
   TaskStatusTool,
   TaskCancelTool,

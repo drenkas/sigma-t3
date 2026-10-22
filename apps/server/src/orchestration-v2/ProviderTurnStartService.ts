@@ -58,6 +58,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+import { expandRolesCommand, teamRolesNote } from "./TeamRoles.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -1019,10 +1020,11 @@ export const layer: Layer.Layer<
       const routableSubagents = projection.subagents.filter((subagent) =>
         RunExecutionService.canRouteRelatedSubagent(subagent.status),
       );
-      const userText = projectComposerContextForProvider({
+      const composerText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
       });
+      const userText = expandRolesCommand(composerText) ?? composerText;
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
       const noteContinuation = isRestartNoteContinuation(
@@ -1087,6 +1089,24 @@ export const layer: Layer.Layer<
           .filter((source) => source.nativeThreadId === undefined)
           .map((source) => source.runId),
       );
+      const nativeThreadHasTurns =
+        nativeInputRunIds.size > 0 ||
+        (legacyInputRunIds.size > 0 &&
+          sameNativeThread &&
+          !acceptedAttempts.some((source) => source.nativeThreadId !== undefined));
+      // A native slash command must stay at the start of the prompt, and a
+      // delegated child works for its parent rather than leading the team.
+      const teamNote =
+        nativeThreadHasTurns ||
+        userText.trimStart().startsWith("/") ||
+        projection.thread.lineage.relationshipToParent === "subagent"
+          ? ""
+          : teamRolesNote(
+              yield* serverSettings.getSettings.pipe(
+                Effect.map((settings) => settings.teamRoles),
+                Effect.orElseSucceed(() => []),
+              ),
+            );
       const legacyRecoveredRunIds = new Set(
         projection.runs
           .filter(
@@ -1191,7 +1211,9 @@ export const layer: Layer.Layer<
               return handoffBudget({
                 tokenCap,
                 modelContextWindow,
-                userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                userText: [teamNote, restartNote, userText]
+                  .filter((part) => part !== "")
+                  .join("\n\n"),
                 attachments: message.attachments,
                 providerThread: budgetProviderThread,
                 nativeContextEstimate:
@@ -1231,7 +1253,7 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
+          const context = [teamNote, delivery.context, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1283,6 +1305,7 @@ export const layer: Layer.Layer<
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
         restartNote === "" &&
+        teamNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
@@ -1311,11 +1334,7 @@ export const layer: Layer.Layer<
               .filter((turn) => turn.providerThreadId === providerThread.id)
               .map((turn) => turn.ordinal),
           ) + 1,
-        nativeThreadHasTurns:
-          nativeInputRunIds.size > 0 ||
-          (legacyInputRunIds.size > 0 &&
-            sameNativeThread &&
-            !acceptedAttempts.some((source) => source.nativeThreadId !== undefined)),
+        nativeThreadHasTurns,
         shouldStartProviderTurn: runControls.shouldStartProviderTurn,
         shouldFinalizeRun: runControls.shouldFinalizeRun,
         hasUnpairedRunInterruptRequest: runControls.hasUnpairedRunInterruptRequest,

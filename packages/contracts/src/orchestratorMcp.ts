@@ -38,6 +38,7 @@ import {
   OrchestrationV2TurnItemStatus,
 } from "./orchestrationV2.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
+import { TeamRoles } from "./settings.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
 const OrchestratorMcpPrompt = TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)).annotate({
@@ -579,8 +580,25 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
     scheduledTasks: Schema.Boolean,
     maxBatchThreads: Schema.Number,
   }),
+  teamRoles: TeamRoles.annotate({
+    description:
+      "The user's saved team: the model for each role. Delegate a role's work to its model.",
+  }),
 });
 export type OrchestratorMcpCapabilitiesResult = typeof OrchestratorMcpCapabilitiesResult.Type;
+
+export const OrchestratorMcpTeamRolesSetInput = Schema.Struct({
+  roles: TeamRoles.annotate({
+    description:
+      "The whole team, replacing the saved one; [] clears it. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. description says what the role does, in a sentence.",
+  }),
+});
+export type OrchestratorMcpTeamRolesSetInput = typeof OrchestratorMcpTeamRolesSetInput.Type;
+
+export const OrchestratorMcpTeamRolesSetResult = Schema.Struct({
+  teamRoles: TeamRoles,
+});
+export type OrchestratorMcpTeamRolesSetResult = typeof OrchestratorMcpTeamRolesSetResult.Type;
 
 export const OrchestratorMcpScheduleTaskInput = Schema.Struct({
   projectId: OrchestratorMcpProjectTarget,

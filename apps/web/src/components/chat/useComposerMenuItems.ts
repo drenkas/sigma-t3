@@ -183,6 +183,18 @@ export function useComposerMenuItems({
           label: "/model",
           description: "Switch response model for this thread",
         },
+        // The server expands `/roles` only when it opens the message.
+        ...(composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:roles",
+                type: "slash-command",
+                command: "roles",
+                label: "/roles",
+                description: "Set up the models for your agent team's roles",
+              },
+            ] as const)
+          : []),
         ...(planModeUiEnabled
           ? ([
               {

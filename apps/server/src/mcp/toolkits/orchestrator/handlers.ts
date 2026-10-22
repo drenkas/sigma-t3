@@ -16,6 +16,12 @@ const handlers = {
       return yield* service.capabilities(scope, input);
     }),
   ),
+  team_roles_set: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      return yield* service.setTeamRoles(input);
+    }),
+  ),
   delegate_task: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
