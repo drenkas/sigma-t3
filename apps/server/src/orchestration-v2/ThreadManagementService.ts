@@ -1,4 +1,3 @@
-import * as RepositoryTaskPolicy from "../repositoryTasks/RepositoryTaskPolicy.ts";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -515,7 +514,6 @@ const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
-  const constructionPolicy = yield* Effect.serviceOption(RepositoryTaskPolicy.RepositoryTaskPolicy);
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -672,31 +670,9 @@ const make = Effect.gen(function* () {
   };
 
   const dispatch: ThreadManagementServiceShape["dispatch"] = (command) =>
-    Effect.serviceOption(RepositoryTaskPolicy.RepositoryTaskPolicy).pipe(
-      Effect.map((policy) => (Option.isSome(policy) ? policy : constructionPolicy)),
-      Effect.flatMap((repositoryPolicy) =>
-        ensureCommandTranscripts(command).pipe(
-          Effect.andThen(assertDispatchTargetEnabled(command)),
-          Effect.andThen(
-            command.type === "delegated_task.request" && Option.isSome(repositoryPolicy)
-              ? orchestrator.getThreadRecords(command.parentThreadId, []).pipe(
-                  Effect.flatMap((parent) =>
-                    repositoryPolicy.value.prepareNativeDelegation(parent.thread, command),
-                  ),
-                  Effect.mapError(
-                    (cause) =>
-                      new Orchestrator.OrchestratorCommandRejectedError({
-                        commandId: command.commandId,
-                        commandType: command.type,
-                        cause,
-                      }),
-                  ),
-                )
-              : Effect.succeed(command),
-          ),
-          Effect.flatMap((prepared) => orchestrator.dispatch(prepared)),
-        ),
-      ),
+    ensureCommandTranscripts(command).pipe(
+      Effect.andThen(assertDispatchTargetEnabled(command)),
+      Effect.andThen(orchestrator.dispatch(command)),
     );
 
   const getProjectThread: ThreadManagementServiceShape["getProjectThread"] = (input) =>

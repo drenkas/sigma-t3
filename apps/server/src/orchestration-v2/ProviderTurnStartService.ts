@@ -1,4 +1,3 @@
-import * as RepositoryTaskPolicy from "../repositoryTasks/RepositoryTaskPolicy.ts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
@@ -117,9 +116,6 @@ export const layer: Layer.Layer<
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
-    const constructionPolicy = yield* Effect.serviceOption(
-      RepositoryTaskPolicy.RepositoryTaskPolicy,
-    );
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -476,41 +472,6 @@ export const layer: Layer.Layer<
           return;
         }
       }
-      const settleStartFailure = Effect.fn("ProviderTurnStartService.settleStartFailure")(
-        function* (failed: {
-          readonly signal: string;
-          readonly title: string;
-          readonly error: Error;
-        }) {
-          const nestedCause = "cause" in failed.error ? failed.error.cause : undefined;
-          yield* settleRunBeforeStart({
-            signal: failed.signal,
-            status: "failed",
-            now: yield* DateTime.now,
-            providerInstanceId: run.providerInstanceId,
-            itemProviderThreadId: providerThread.id,
-            item: {
-              type: "error",
-              title: failed.title,
-              failure: makeProviderFailure({
-                cause: failed.error,
-                message:
-                  knownProviderFailureMessage(failed.error) ??
-                  (nestedCause instanceof Error
-                    ? nestedCause.message
-                    : typeof nestedCause === "string"
-                      ? nestedCause
-                      : failed.error.message),
-                class: "provider_error",
-              }),
-            },
-          });
-        },
-      );
-      const suppliedPolicy = yield* Effect.serviceOption(RepositoryTaskPolicy.RepositoryTaskPolicy);
-      const repositoryTaskPolicy = Option.isSome(suppliedPolicy)
-        ? suppliedPolicy
-        : constructionPolicy;
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem
@@ -522,22 +483,6 @@ export const layer: Layer.Layer<
             Effect.orElseSucceed(() => undefined),
           );
           if (project !== undefined) {
-            if (Option.isSome(repositoryTaskPolicy)) {
-              const identity = yield* Effect.result(
-                repositoryTaskPolicy.value.assertWorkspaceIdentity(
-                  projection.thread,
-                  project.workspaceRoot,
-                ),
-              );
-              if (identity._tag === "Failure") {
-                yield* settleStartFailure({
-                  signal: "repository-task-workspace-identity",
-                  title: "Repository task checkout no longer matches its snapshot",
-                  error: identity.failure,
-                });
-                return;
-              }
-            }
             yield* Effect.logWarning("provider turn start recreating missing worktree", {
               threadId: projection.thread.id,
               worktreePath,
@@ -596,19 +541,37 @@ export const layer: Layer.Layer<
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
       );
-      if (Option.isSome(repositoryTaskPolicy)) {
-        const admission = yield* Effect.result(
-          repositoryTaskPolicy.value.assertMayStart(projection.thread, resolvedRuntimePolicy.cwd),
-        );
-        if (admission._tag === "Failure") {
-          yield* settleStartFailure({
-            signal: "repository-task-admission",
-            title: "Repository task no longer admits work",
-            error: admission.failure,
+      const settleStartFailure = Effect.fn("ProviderTurnStartService.settleStartFailure")(
+        function* (failed: {
+          readonly signal: string;
+          readonly title: string;
+          readonly error: Error;
+        }) {
+          const nestedCause = "cause" in failed.error ? failed.error.cause : undefined;
+          yield* settleRunBeforeStart({
+            signal: failed.signal,
+            status: "failed",
+            now: yield* DateTime.now,
+            providerInstanceId: run.providerInstanceId,
+            itemProviderThreadId: providerThread.id,
+            item: {
+              type: "error",
+              title: failed.title,
+              failure: makeProviderFailure({
+                cause: failed.error,
+                message:
+                  knownProviderFailureMessage(failed.error) ??
+                  (nestedCause instanceof Error
+                    ? nestedCause.message
+                    : typeof nestedCause === "string"
+                      ? nestedCause
+                      : failed.error.message),
+                class: "provider_error",
+              }),
+            },
           });
-          return;
-        }
-      }
+        },
+      );
       const failedRuns = new Map(
         projection.runs
           .filter(

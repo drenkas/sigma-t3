@@ -697,7 +697,6 @@ export const OrchestrationV2SubagentWorkflow = Schema.Struct({
 export type OrchestrationV2SubagentWorkflow = typeof OrchestrationV2SubagentWorkflow.Type;
 
 export const OrchestrationV2Subagent = Schema.Struct({
-  role: Schema.optional(TrimmedNonEmptyString),
   id: NodeId,
   threadId: ThreadId,
   runId: Schema.NullOr(RunId),
@@ -2966,7 +2965,6 @@ export const OrchestrationV2Command = Schema.Union([
     parentRunId: RunId,
     parentNodeId: NodeId,
     task: TrimmedNonEmptyString,
-    role: Schema.optional(TrimmedNonEmptyString),
     title: Schema.optional(TrimmedNonEmptyString),
     modelSelection: ModelSelection,
     runtimeMode: RuntimeMode,

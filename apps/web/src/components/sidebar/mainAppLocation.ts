@@ -7,8 +7,7 @@ export function isSidebarUtilityPage(pathname: string) {
     pathname.startsWith("/settings/") ||
     pathname.startsWith("/projects/") ||
     pathname === "/usage" ||
-    pathname === "/pull-requests" ||
-    pathname === "/repository-tasks"
+    pathname === "/pull-requests"
   );
 }
 

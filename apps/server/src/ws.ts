@@ -1,7 +1,6 @@
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
-import * as RepositoryTasksWsRpc from "./repositoryTasks/RepositoryTasksWsRpc.ts";
 
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -95,7 +94,7 @@ import {
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
   WS_METHODS,
-  WsCoreRpcGroup,
+  WsRpcGroup,
 } from "@t3tools/contracts";
 import {
   HttpRouter,
@@ -545,10 +544,7 @@ function projectFileFailureContext(
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
-const ServerCoreWsRpcGroup = WsCoreRpcGroup.middleware(RpcInstrumentation);
-const ServerWsRpcGroup = ServerCoreWsRpcGroup.merge(
-  RepositoryTasksWsRpc.ServerRepositoryTasksRpcGroup,
-);
+const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
 // Replaying each intervening event costs a shell refetch; past this gap a
 // single O(active-threads) snapshot is cheaper and bounded.
 const SHELL_RESUME_MAX_GAP = 1_000;
@@ -1185,14 +1181,14 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-const layerCoreWsRpc = (
+export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerCoreWsRpcGroup.toLayer(
+  ServerWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1808,7 +1804,7 @@ const layerCoreWsRpc = (
         return result;
       });
 
-      const handlers = ServerCoreWsRpcGroup.of({
+      const handlers = ServerWsRpcGroup.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3131,9 +3127,6 @@ const layerCoreWsRpc = (
       return handlers;
     }),
   );
-
-export const layerWsRpc = (...args: Parameters<typeof layerCoreWsRpc>) =>
-  Layer.merge(layerCoreWsRpc(...args), RepositoryTasksWsRpc.layer);
 
 // RpcServer's default sends a socket-level Defect frame instead, and the client
 // ends every pending request on the socket with it.

@@ -1,6 +1,6 @@
 # Sigma T3
 
-Sigma T3 is the local-preview fork at [drenkas/sigma-t3](https://github.com/drenkas/sigma-t3), based on [T3 Code](https://github.com/pingdotgg/t3code). See [fork identity and local packaging](./docs/operations/sigma-fork.md) and [repository tasks](./docs/user/repository-tasks.md) for this fork's setup and features.
+Sigma T3 is the local-preview fork at [drenkas/sigma-t3](https://github.com/drenkas/sigma-t3), based on [T3 Code](https://github.com/pingdotgg/t3code). See [fork identity and local packaging](./docs/operations/sigma-fork.md) for this fork's setup.
 
 The T3 Code installation commands, hosted services, mobile apps, and release links below are retained as **upstream reference**. They install or open official T3 Code, not Sigma T3; this fork currently uses local preview builds.
 

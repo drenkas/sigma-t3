@@ -50,7 +50,6 @@ import type * as Orchestrator from "./Orchestrator.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as ThreadManagement from "./ThreadManagementService.ts";
-import * as WorkspacePreparationObserver from "./WorkspacePreparationObserver.ts";
 
 export type ThreadLaunchWorkspaceStrategy =
   | { readonly type: "root"; readonly branch?: string | undefined }
@@ -210,7 +209,6 @@ const make = Effect.gen(function* () {
   const ids = yield* IdAllocator.IdAllocatorV2;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
-  const workspaceObserver = yield* WorkspacePreparationObserver.WorkspacePreparationObserver;
   const preparationScope = yield* Scope.make("sequential");
   const scheduledLaunches = yield* Ref.make<ReadonlySet<CommandId>>(new Set());
   yield* Effect.addFinalizer(() => Scope.close(preparationScope, Exit.void));
@@ -640,7 +638,7 @@ const make = Effect.gen(function* () {
       yield* setupTracker.markUncancellable(threadId);
       yield* setupTracker.stageStatus(threadId, "agent", "running");
       if (runId !== null) {
-        const release = threads
+        yield* threads
           .dispatch({
             type: "prepared-run.release",
             commandId: CommandId.make(`${input.commandId}:release`),
@@ -656,11 +654,6 @@ const make = Effect.gen(function* () {
             ),
             Effect.uninterruptible,
           );
-        yield* workspaceObserver === undefined
-          ? release
-          : workspaceObserver
-              .beforeRelease(threadId, worktreePath ?? project.workspaceRoot, release)
-              .pipe(Effect.mapError(mapError(input, "release-run", threadId)));
       }
       yield* setupTracker.stageStatus(threadId, "agent", "done");
       yield* awaitAsyncSetup;

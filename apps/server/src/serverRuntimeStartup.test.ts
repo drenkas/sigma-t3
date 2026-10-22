@@ -1,4 +1,3 @@
-import * as RepositoryTaskReactor from "./repositoryTasks/RepositoryTaskReactor.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
@@ -105,7 +104,6 @@ it.effect.each([
           startupPresentation: "browser",
           autoBootstrapProjectFromCwd: true,
         }),
-        Layer.mock(RepositoryTaskReactor.RepositoryTaskReactor)({ start: () => Effect.void }),
         Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),
         Layer.mock(LegacyV1ThreadImporter.LegacyV1ThreadImporter)({
           pendingThreadCount: Effect.succeed(0),

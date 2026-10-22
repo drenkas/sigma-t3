@@ -25,11 +25,7 @@ describe("Sigma migrations", () => {
       yield* runMigrations();
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [
-          [1, "RepositoryTasks"],
-          [2, "RepositoryTaskArchive"],
-          [3, "RepositoryTaskMerges"],
-        ],
+        sigma: [],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -40,23 +36,13 @@ describe("Sigma migrations", () => {
       yield* runMigrations();
       yield* sql`DROP TABLE sigma_sql_migrations`;
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (68, 'RepositoryTasks')`;
-      yield* sql`INSERT INTO repository_groups (id, payload_json) VALUES ('kept', '{}')`;
 
       yield* runMigrations();
 
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [
-          [1, "RepositoryTasks"],
-          [2, "RepositoryTaskArchive"],
-          [3, "RepositoryTaskMerges"],
-        ],
+        sigma: [],
       });
-      const groups = yield* sql<{ readonly id: string }>`SELECT id FROM repository_groups`;
-      assert.deepStrictEqual(
-        groups.map((row) => row.id),
-        ["kept"],
-      );
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 });

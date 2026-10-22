@@ -1,4 +1,3 @@
-import { REPOSITORY_TASK_METHODS } from "@t3tools/contracts";
 import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS, type WsRpcGroup } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,20 +14,6 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  * even where they differ from the method prefix.
  */
 const RPC_AGGREGATES = {
-  [REPOSITORY_TASK_METHODS.groupsList]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.groupsUpsert]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.groupsDelete]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksList]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksCreate]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksGet]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksStop]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksAcknowledge]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksArchive]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksUnarchive]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksMergePreview]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksMergeApply]: "repositoryTasks",
-  [REPOSITORY_TASK_METHODS.tasksSubscribe]: "repositoryTasks",
-
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: "orchestration",
