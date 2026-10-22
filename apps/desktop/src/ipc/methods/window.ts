@@ -232,6 +232,27 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const pickFolders = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PICK_FOLDERS_CHANNEL,
+  payload: Schema.UndefinedOr(Schema.String),
+  result: Schema.Array(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.pickFolders")(function* (initialPath) {
+    const dialog = yield* ElectronDialog.ElectronDialog;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    if (!(yield* appSettings.get).localEnvironmentEnabled) {
+      return [];
+    }
+    return yield* dialog.pickFiles({
+      owner: yield* electronWindow.focusedMainOrFirst,
+      defaultPath: Option.fromNullishOr(initialPath),
+      multiple: true,
+      directories: true,
+      filters: [],
+    });
+  }),
+});
+
 export const pickProjectFavicon = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PICK_PROJECT_FAVICON_CHANNEL,
   payload: Schema.UndefinedOr(Schema.String),

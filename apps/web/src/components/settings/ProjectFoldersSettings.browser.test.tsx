@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
-import { render } from "../../../test/render";
+import { render, stubGlobal } from "../../../test/render";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 
 const state = vi.hoisted(() => ({ inputs: [] as unknown[] }));
@@ -14,6 +14,10 @@ vi.mock(import("../../state/use-orchestration-command"), async (original) => ({
     return { _tag: "Success", value: undefined };
   }) as never,
 }));
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "local-host") as never,
+}));
 
 import { ProjectFoldersSettings } from "./ProjectFoldersSettings";
 
@@ -21,40 +25,50 @@ function setup() {
   state.inputs = [];
 }
 
-const member = {
-  id: "project-web" as ProjectId,
-  environmentId: "remote-host" as EnvironmentId,
-  environmentLabel: "Remote host",
-  physicalProjectKey: "remote-host:project-web",
-  title: "Web",
-  workspaceRoot: "/work/web",
-  additionalWorkspaceRoots: ["/work/api"],
-} as unknown as SidebarProjectGroupMember;
+const member = (environmentId: string) =>
+  ({
+    id: "project-web" as ProjectId,
+    environmentId: environmentId as EnvironmentId,
+    environmentLabel: "Host",
+    physicalProjectKey: `${environmentId}:project-web`,
+    title: "Web",
+    workspaceRoot: "/work/web",
+    additionalWorkspaceRoots: ["/work/api"],
+  }) as unknown as SidebarProjectGroupMember;
 
 describe("ProjectFoldersSettings", () => {
-  it("adds and removes a checkout's additional folders", async () => {
+  it("adds picked folders once, skips the root, and removes a folder", async () => {
     setup();
+    const pickFolders = vi.fn(async () => ["/work/docs", "/work/web", "/work/api", "/work/docs"]);
+    using _bridge = stubGlobal("desktopBridge", { pickFolders });
     await using screen = await render(
-      <ProjectFoldersSettings members={[member]} canEdit={() => true} />,
+      <ProjectFoldersSettings members={[member("local-host")]} canEdit={() => true} />,
     );
 
-    await expect.element(screen.getByText("/work/web")).toBeVisible();
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "Folder path" }),
-      " /work/docs {Enter}",
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Add folders" }));
+    await vi.waitFor(() => expect(state.inputs).toHaveLength(1));
     await userEvent.click(screen.getByRole("button", { name: "Remove folder /work/api" }));
 
+    expect(pickFolders).toHaveBeenCalledWith("/work/web");
     expect(state.inputs).toEqual([
       {
-        environmentId: "remote-host",
+        environmentId: "local-host",
         input: { projectId: "project-web", additionalWorkspaceRoots: ["/work/api", "/work/docs"] },
       },
       {
-        environmentId: "remote-host",
+        environmentId: "local-host",
         input: { projectId: "project-web", additionalWorkspaceRoots: [] },
       },
     ]);
-    expect(screen.getByRole("button", { name: "Browse for a folder" }).query()).toBeNull();
+  });
+
+  it("lists a remote checkout's folders without offering to pick local ones", async () => {
+    setup();
+    await using screen = await render(
+      <ProjectFoldersSettings members={[member("remote-host")]} canEdit={() => true} />,
+    );
+
+    await expect.element(screen.getByText("/work/api")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add folders" }).query()).toBeNull();
   });
 });
