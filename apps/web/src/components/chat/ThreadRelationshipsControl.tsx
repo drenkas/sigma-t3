@@ -45,8 +45,10 @@ import {
   BotIcon,
   CornerLeftUpIcon,
   GitForkIcon,
+  ListIcon,
   LoaderCircleIcon,
   MoreHorizontalIcon,
+  NetworkIcon,
   PlusIcon,
   SquareIcon,
   UnplugIcon,
@@ -66,6 +68,7 @@ import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { AgentElapsed } from "./AgentElapsed";
 import { ThreadRelationshipIcon, threadRelationshipStatusLabel } from "./ThreadRelationshipIcon";
+import { ThreadLineageGraph } from "./ThreadLineageGraph";
 import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
 
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -247,6 +250,7 @@ export function ThreadRelationshipsPanel(props: {
   );
   const [busyAction, setBusyAction] = useState<"merge" | "detach" | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
   // These lookups and the graph walk every subagent and thread, so they sit below
   // the panel's hooks where the compiler can cache them.
   const providers = providersByEnvironment.get(props.environmentId);
@@ -404,32 +408,53 @@ export function ThreadRelationshipsPanel(props: {
       title={runningCount > 0 ? `Lineage · ${runningCount} running` : "Lineage"}
       data-thread-relationships-panel
       actions={
-        canDetach ? (
-          <Menu>
-            <MenuTrigger
+        <>
+          <Tooltip>
+            <TooltipTrigger
               render={
                 <ThreadDetailsControl
                   size="icon-xs"
                   variant="ghost"
                   part="icon"
-                  aria-label="More thread actions"
-                  disabled={busyAction !== null}
+                  aria-label={showGraph ? "Show lineage as a list" : "Show lineage as a graph"}
+                  onClick={() => setShowGraph(!showGraph)}
                 />
               }
             >
-              <MoreHorizontalIcon className="size-3.5" />
-            </MenuTrigger>
-            <MenuPopup align="end" className="min-w-60 max-w-(--available-width)">
-              <MenuItem onClick={() => void detach()}>
-                <UnplugIcon className="size-3.5" />
-                Disconnect agent session
-              </MenuItem>
-            </MenuPopup>
-          </Menu>
-        ) : null
+              {showGraph ? <ListIcon className="size-3.5" /> : <NetworkIcon className="size-3.5" />}
+            </TooltipTrigger>
+            <TooltipPopup side="left">{showGraph ? "List" : "Graph"}</TooltipPopup>
+          </Tooltip>
+          {canDetach ? (
+            <Menu>
+              <MenuTrigger
+                render={
+                  <ThreadDetailsControl
+                    size="icon-xs"
+                    variant="ghost"
+                    part="icon"
+                    aria-label="More thread actions"
+                    disabled={busyAction !== null}
+                  />
+                }
+              >
+                <MoreHorizontalIcon className="size-3.5" />
+              </MenuTrigger>
+              <MenuPopup align="end" className="min-w-60 max-w-(--available-width)">
+                <MenuItem onClick={() => void detach()}>
+                  <UnplugIcon className="size-3.5" />
+                  Disconnect agent session
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          ) : null}
+        </>
       }
     >
-      {groups.map((group) => (
+      {showGraph ? (
+        <ThreadLineageGraph graph={graph} threadId={props.threadId} onOpenThread={openThread} />
+      ) : null}
+      {(showGraph ? [] : groups).map((group) => (
         <ThreadLineageGroup key={`${scopedThreadKey(ref)}:${group.id}`} {...group}>
           {(visibleRows) =>
             visibleRows.map(({ threadId, edge }) => {
