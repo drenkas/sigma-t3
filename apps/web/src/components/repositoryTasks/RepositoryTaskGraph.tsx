@@ -2,7 +2,9 @@ import type { EnvironmentId, ProjectId, RepositoryTask, ThreadId } from "@t3tool
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 
+import { useClientSettings } from "~/hooks/useSettings";
 import { newMessageId } from "~/lib/utils";
+import { formatShortTimestamp } from "~/timestampFormat";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { ExecutionGraph } from "../graph/ExecutionGraph";
@@ -11,6 +13,8 @@ import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 
 const TREE_KINDS: ReadonlySet<string> = new Set(["membership", "delegation"]);
+// Every message is a timeline entry; drawn, they would bury the tree.
+const MESSAGE_KINDS: ReadonlySet<string> = new Set(["prompt", "steer", "follow_up"]);
 const pretty = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ");
 type GraphNode = RepositoryTask["graph"]["nodes"][number];
 
@@ -44,7 +48,22 @@ export function RepositoryTaskGraph({
     status: node.status,
     pendingApproval: node.pendingApproval,
   }));
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const byId = new Map(task.graph.nodes.map((node) => [node.id, node]));
+  const nameOf = (id: string) => {
+    if (id === "user") return "You";
+    const node = byId.get(id);
+    return node ? titleOf(node) : "Unavailable";
+  };
+  const drawn = new Map<string, RepositoryTask["graph"]["edges"][number]>();
+  for (const edge of task.graph.edges)
+    if (!MESSAGE_KINDS.has(edge.kind)) {
+      const key = edge.kind === "result" ? `result:${edge.source}:${edge.target}` : edge.id;
+      if (!drawn.has(key)) drawn.set(key, edge);
+    }
+  const timeline = task.graph.edges
+    .filter((edge) => edge.sequence !== null)
+    .toSorted((left, right) => left.sequence! - right.sequence!);
   const selected = selectedId === null ? undefined : byId.get(selectedId);
 
   return (
@@ -53,7 +72,7 @@ export function RepositoryTaskGraph({
       <ExecutionGraph
         label="Execution graph"
         nodes={nodes}
-        edges={task.graph.edges}
+        edges={[...drawn.values()]}
         treeKinds={TREE_KINDS}
         selectedId={selectedId}
         onSelect={setSelectedId}
@@ -74,28 +93,27 @@ export function RepositoryTaskGraph({
         </p>
       )}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium">Recorded links</h3>
-        {task.graph.edges.length ? (
-          <ul className="space-y-1 text-sm">
-            {task.graph.edges.map((edge) => {
-              const source = byId.get(edge.source);
-              const target = byId.get(edge.target);
-              return (
-                <li key={edge.id} className="rounded-md bg-muted/50 px-3 py-2">
-                  <span>{source ? titleOf(source) : "Unavailable"}</span>
+        <h3 className="text-sm font-medium">Timeline</h3>
+        {timeline.length ? (
+          <ol aria-label="Timeline" className="space-y-1 text-sm">
+            {timeline.map((edge) => (
+              <li key={edge.id} className="flex gap-2 rounded-md bg-muted/50 px-3 py-2">
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  #{edge.sequence} · {formatShortTimestamp(edge.at!, timestampFormat)}
+                </span>
+                <span className="min-w-0">
+                  <span>{nameOf(edge.source)}</span>
                   <span className="px-2 text-muted-foreground">→</span>
-                  <span>{target ? titleOf(target) : "Unavailable"}</span>
+                  <span>{nameOf(edge.target)}</span>
                   <span className="ml-2 text-xs text-muted-foreground">
                     {pretty(edge.kind)} · {pretty(edge.status)}
                   </span>
-                </li>
-              );
-            })}
-          </ul>
+                </span>
+              </li>
+            ))}
+          </ol>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No execution links have been recorded yet.
-          </p>
+          <p className="text-sm text-muted-foreground">No events have been recorded yet.</p>
         )}
       </div>
     </section>

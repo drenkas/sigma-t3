@@ -322,6 +322,95 @@ const make = Effect.gen(function* () {
     record?.runtimeRequests.some(
       (request) => request.kind !== "user_input" && request.status === "pending",
     ) ?? false;
+  /**
+   * Messages each graph thread received, typed by how orchestration took them in. A sender is
+   * named only when the message records one; anything else stays out rather than guessed.
+   */
+  const withTimeline = Effect.fn("RepositoryTasks.withTimeline")(function* (
+    links: ReadonlyArray<RepositoryTask["graph"]["edges"][number]>,
+    loaded: ReadonlyArray<Records>,
+    visited: ReadonlySet<string>,
+  ) {
+    const threadIds = loaded.map((record) => record.thread.id);
+    const items = threadIds.length
+      ? yield* sql<{
+          readonly messageId: string;
+          readonly intent: string;
+          readonly status: string;
+        }>`
+          SELECT json_extract(payload_json, '$.messageId') AS "messageId",
+            json_extract(payload_json, '$.inputIntent') AS intent, status
+          FROM orchestration_v2_projection_turn_items
+          WHERE type = 'user_message' AND thread_id IN ${sql.in(threadIds)}`.pipe(
+          Effect.mapError(persistenceError),
+        )
+      : [];
+    const intake = new Map(items.map((item) => [item.messageId, item]));
+    const parent = new Map(
+      links
+        .filter((edge) => edge.kind === "membership" || edge.kind === "delegation")
+        .map((edge) => [edge.target, edge.source]),
+    );
+    const edges = new Map<string, RepositoryTask["graph"]["edges"][number]>();
+    for (const record of loaded) {
+      const target = `thread:${record.thread.id}`;
+      for (const message of record.messages) {
+        if (message.role !== "user") continue;
+        const at = DateTime.formatIso(message.createdAt);
+        if (message.delegatedCompletion !== undefined) {
+          for (const taskId of message.delegatedCompletion.taskIds) {
+            const agent = record.subagents.find((entry) => entry.id === taskId);
+            if (agent === undefined) continue;
+            const source =
+              agent.childThreadId === null ? `agent:${agent.id}` : `thread:${agent.childThreadId}`;
+            const id = `result:${message.id}:${taskId}`;
+            edges.set(id, {
+              id,
+              source,
+              target,
+              kind: "result",
+              status: "delivered",
+              sequence: null,
+              at,
+            });
+          }
+          continue;
+        }
+        const source =
+          message.senderThreadId !== undefined
+            ? `thread:${message.senderThreadId}`
+            : message.createdBy === "user" && message.notification === undefined
+              ? "user"
+              : null;
+        if (source === null || (source !== "user" && !visited.has(source))) continue;
+        const item = intake.get(message.id);
+        // A message without an intake record is still waiting in the queue.
+        const intent = item?.intent ?? "queued_turn";
+        edges.set(`message:${message.id}`, {
+          id: `message:${message.id}`,
+          source,
+          target,
+          kind:
+            parent.get(source) === target
+              ? "result"
+              : intent === "turn_start"
+                ? "prompt"
+                : intent === "queued_turn"
+                  ? "follow_up"
+                  : "steer",
+          status: item?.status ?? "queued",
+          sequence: null,
+          at,
+        });
+      }
+    }
+    const all = [...links, ...edges.values()];
+    const timed = all
+      .filter((edge) => edge.at !== null)
+      .toSorted((a, b) => a.at!.localeCompare(b.at!) || a.id.localeCompare(b.id));
+    const sequence = new Map(timed.map((edge, index) => [edge.id, index + 1]));
+    return all.map((edge) => ({ ...edge, sequence: sequence.get(edge.id) ?? null }));
+  });
   const get = Effect.fn("RepositoryTasks.get")(function* (
     taskId: string,
   ): Effect.fn.Return<RepositoryTask, RepositoryTaskError> {
@@ -331,6 +420,7 @@ const make = Effect.gen(function* () {
       nodes: Array<RepositoryTask["graph"]["nodes"][number]>;
       edges: Array<RepositoryTask["graph"]["edges"][number]>;
     } = { nodes: [], edges: [] };
+    const loaded: Array<Records> = [];
     const coordinatorNode = `thread:${snapshot.coordinatorThreadId}`;
     graph.nodes.push({
       id: coordinatorNode,
@@ -343,6 +433,7 @@ const make = Effect.gen(function* () {
       pendingApproval: awaitingApproval(coordinator),
     });
     const visited = new Set<string>([coordinatorNode]);
+    if (coordinator !== null) loaded.push(coordinator);
     const transfers = new Map<string, Records["contextTransfers"][number]>();
     const rememberTransfers = (record: Records) => {
       for (const transfer of record.contextTransfers) transfers.set(transfer.id, transfer);
@@ -360,10 +451,17 @@ const make = Effect.gen(function* () {
             target: id,
             kind: "delegation",
             status: agent.status,
+            sequence: null,
+            // An app-owned agent's first prompt is its own timeline entry.
+            at:
+              agent.childThreadId === null && agent.startedAt !== null
+                ? DateTime.formatIso(agent.startedAt)
+                : null,
           });
           if (visited.has(id)) continue;
           visited.add(id);
           const child = agent.childThreadId === null ? null : yield* records(agent.childThreadId);
+          if (child !== null) loaded.push(child);
           graph.nodes.push({
             id,
             threadId: agent.childThreadId,
@@ -383,6 +481,7 @@ const make = Effect.gen(function* () {
       const snap = snapshot.members.find((entry) => entry.projectId === member.project_id);
       if (!snap) return yield* fail("persistence");
       const record = yield* records(snap.threadId);
+      if (record !== null) loaded.push(record);
       const id = `thread:${snap.threadId}`;
       const memberMerges = merges
         .filter((merge) => merge.project_id === member.project_id)
@@ -437,15 +536,9 @@ const make = Effect.gen(function* () {
         target: id,
         kind: "membership",
         status: memberStatus,
+        sequence: null,
+        at: null,
       });
-      if (member.delivery_state === "delivered")
-        graph.edges.push({
-          id: `result:${snap.threadId}`,
-          source: id,
-          target: coordinatorNode,
-          kind: "result",
-          status: "delivered",
-        });
       if (record !== null) yield* addAgents(record, id);
     }
     if (coordinator !== null) yield* addAgents(coordinator, coordinatorNode);
@@ -459,6 +552,8 @@ const make = Effect.gen(function* () {
           target,
           kind: "context_transfer",
           status: transfer.status,
+          sequence: null,
+          at: DateTime.formatIso(transfer.createdAt),
         });
     }
     for (const merge of merges) {
@@ -471,8 +566,11 @@ const make = Effect.gen(function* () {
           target: `thread:${snap.threadId}`,
           kind: "merge",
           status: merge.status,
+          sequence: null,
+          at: null,
         });
     }
+    graph.edges = yield* withTimeline(graph.edges, loaded, visited);
     const coordinatorStatus =
       coordinator !== null && settled(coordinator) && !(yield* treeSettled(coordinator))
         ? "waiting"
