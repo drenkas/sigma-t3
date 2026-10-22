@@ -225,9 +225,9 @@ from the icon palette, derived from the saved project name. For example, `Nebula
 ## Projects with several folders
 
 A project can span more than one folder, for example a web app and the API it calls. Select the
-project, open Project, and add folders under **Folders**. Type an absolute path on that machine,
-or browse for one on desktop. New turns in any of the project's threads can read and edit every
-folder.
+project, open Project, and under **Folders** choose **Add folders** or drop folders from Finder or
+Explorer onto the list. This works in the desktop app for projects on its own machine. New turns
+in any of the project's threads can read and edit every folder.
 
 The project's own folder stays the agent's working directory. Diffs, checkpoints, worktrees and
 branches only cover that folder, so commit changes in the other folders yourself. Claude, Codex,
