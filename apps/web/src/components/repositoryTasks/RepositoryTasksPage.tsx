@@ -40,6 +40,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { repositoryTaskEnvironment } from "../../state/repositoryTasks";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { useRightPanelStore } from "../../rightPanelStore";
+import { RepositoryTaskMerges } from "./RepositoryTaskMerges";
 import { randomUUID } from "../../lib/utils";
 import { shouldRenderTraitsControls, TraitsPicker } from "../chat/TraitsPicker";
 import {
@@ -192,6 +193,7 @@ function GraphView({
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.5"
+                  strokeDasharray={edge.kind === "merge" ? "5 4" : undefined}
                   markerEnd="url(#repository-task-arrow)"
                 />
               );
@@ -1137,6 +1139,18 @@ export function RepositoryTasksPage({
                             Open diff
                           </Button>
                         </div>
+                        {environmentId ? (
+                          <RepositoryTaskMerges
+                            environmentId={environmentId}
+                            taskId={task.snapshot.id}
+                            merges={member.merges}
+                            canApply={canOperate && task.state === "active"}
+                            onApplied={() => {
+                              detailQuery.refresh();
+                              tasksQuery.refresh();
+                            }}
+                          />
+                        ) : null}
                       </article>
                     ))}
                   </div>

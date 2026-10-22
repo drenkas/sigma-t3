@@ -89,7 +89,7 @@ export const RepositoryTaskGraphEdge = Schema.Struct({
   id: TrimmedNonEmptyString,
   source: TrimmedNonEmptyString,
   target: TrimmedNonEmptyString,
-  kind: Schema.Literals(["membership", "delegation", "result", "context_transfer"]),
+  kind: Schema.Literals(["membership", "delegation", "result", "context_transfer", "merge"]),
   status: Schema.String,
 });
 export const RepositoryTaskMerge = Schema.Struct({
@@ -101,6 +101,27 @@ export const RepositoryTaskMerge = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 });
 export type RepositoryTaskMerge = typeof RepositoryTaskMerge.Type;
+export const RepositoryTaskMergeInput = Schema.Struct({ taskId: Id, sourceThreadId: ThreadId });
+export const RepositoryTaskMergeApplyInput = Schema.Struct({
+  ...RepositoryTaskMergeInput.fields,
+  // Names the reviewed preview, so a workspace that changed since then is refused.
+  token: TrimmedNonEmptyString,
+});
+export const RepositoryTaskMergePreview = Schema.Struct({
+  sourceThreadId: ThreadId,
+  // "applied" shows what was written; the rest are planned again from the files now.
+  status: Schema.Literals(["applied", "ready", "conflict", "empty"]),
+  files: Schema.Array(
+    Schema.Struct({
+      path: Schema.String,
+      // A ready path carries a unified patch, a conflicted one its root / base / worker text.
+      status: Schema.Literals(["ready", "conflict"]),
+      text: Schema.NullOr(Schema.String),
+    }),
+  ),
+  token: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type RepositoryTaskMergePreview = typeof RepositoryTaskMergePreview.Type;
 export const RepositoryTaskMember = Schema.Struct({
   snapshot: RepositoryTaskMemberSnapshot,
   role: Schema.NullOr(Schema.String),
@@ -170,5 +191,7 @@ export const REPOSITORY_TASK_METHODS = {
   tasksAcknowledge: "repositoryTasks.acknowledge",
   tasksArchive: "repositoryTasks.archive",
   tasksUnarchive: "repositoryTasks.unarchive",
+  tasksMergePreview: "repositoryTasks.mergePreview",
+  tasksMergeApply: "repositoryTasks.mergeApply",
   tasksSubscribe: "repositoryTasks.subscribe",
 } as const;

@@ -28,6 +28,11 @@ export function createRepositoryTaskEnvironmentAtoms<R, E>(
       tag: REPOSITORY_TASK_METHODS.tasksGet,
       staleTimeMs: 0,
     }),
+    mergePreview: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:repository-tasks:merge-preview",
+      tag: REPOSITORY_TASK_METHODS.tasksMergePreview,
+      staleTimeMs: 0,
+    }),
     taskUpdates: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:repository-tasks:updates",
       tag: REPOSITORY_TASK_METHODS.tasksSubscribe,
@@ -81,6 +86,15 @@ export function createRepositoryTaskEnvironmentAtoms<R, E>(
     unarchiveTask: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:repository-tasks:unarchive",
       tag: REPOSITORY_TASK_METHODS.tasksUnarchive,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.taskId]),
+      },
+    }),
+    applyMerge: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:repository-tasks:merge-apply",
+      tag: REPOSITORY_TASK_METHODS.tasksMergeApply,
       scheduler,
       concurrency: {
         mode: "serial",
