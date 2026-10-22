@@ -92,6 +92,15 @@ export const RepositoryTaskGraphEdge = Schema.Struct({
   kind: Schema.Literals(["membership", "delegation", "result", "context_transfer"]),
   status: Schema.String,
 });
+export const RepositoryTaskMerge = Schema.Struct({
+  sourceThreadId: ThreadId,
+  worktreePath: Schema.String,
+  // "uncertain": the server stopped while writing; acknowledgement settles it from the files.
+  status: Schema.Literals(["applying", "applied", "empty", "conflict", "failed", "uncertain"]),
+  files: Schema.Array(Schema.String),
+  error: Schema.NullOr(Schema.String),
+});
+export type RepositoryTaskMerge = typeof RepositoryTaskMerge.Type;
 export const RepositoryTaskMember = Schema.Struct({
   snapshot: RepositoryTaskMemberSnapshot,
   role: Schema.NullOr(Schema.String),
@@ -104,6 +113,7 @@ export const RepositoryTaskMember = Schema.Struct({
   preparedRevision: Schema.NullOr(Schema.String),
   pendingApproval: Schema.Boolean,
   deliveryState: Schema.Literals(["pending", "delivering", "delivered", "disposed"]),
+  merges: Schema.Array(RepositoryTaskMerge),
 });
 export const RepositoryTask = Schema.Struct({
   snapshot: RepositoryTaskSnapshot,

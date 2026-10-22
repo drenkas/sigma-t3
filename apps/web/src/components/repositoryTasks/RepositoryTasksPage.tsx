@@ -66,7 +66,12 @@ type AvailableModel = {
 type WorkspaceChoice = "root" | "worktree";
 const EMPTY_PROJECT_IDS: ReadonlyArray<ProjectId> = [];
 const needsAcknowledgement = (task: RepositoryTask) =>
-  task.state === "uncertain" || task.members.some((member) => member.launchState === "uncertain");
+  task.state === "uncertain" ||
+  task.members.some(
+    (member) =>
+      member.launchState === "uncertain" ||
+      member.merges.some((merge) => merge.status === "uncertain"),
+  );
 const scopedModelKey = (environmentId: EnvironmentId | null, modelKey: string) =>
   `${environmentId ?? ""}:${modelKey}`;
 const optionKey = (

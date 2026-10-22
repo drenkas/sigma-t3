@@ -4,6 +4,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import Migration0001 from "./SigmaMigrations/001_RepositoryTasks.ts";
 import Migration0002 from "./SigmaMigrations/002_RepositoryTaskArchive.ts";
+import Migration0003 from "./SigmaMigrations/003_RepositoryTaskMerges.ts";
 
 // Fork tables keep their own history table. Upstream numbers its migrations
 // sequentially, and the migrator skips every id up to the highest recorded one,
@@ -13,6 +14,7 @@ const run = Migrator.make({});
 const sigmaMigrations = Migrator.fromRecord({
   "1_RepositoryTasks": Migration0001,
   "2_RepositoryTaskArchive": Migration0002,
+  "3_RepositoryTaskMerges": Migration0003,
 });
 
 // Builds before the fork had its own table recorded repository tasks as upstream id 68.

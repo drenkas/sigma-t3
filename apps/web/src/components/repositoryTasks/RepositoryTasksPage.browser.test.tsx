@@ -117,6 +117,7 @@ function taskDetail(state: string, launchState: string, archivedAt: string | nul
         preparedRevision: null,
         pendingApproval: false,
         deliveryState: "pending",
+        merges: [],
       },
     ],
     graph: { nodes: [], edges: [] },

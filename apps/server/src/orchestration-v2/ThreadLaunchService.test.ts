@@ -18,6 +18,7 @@ import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
+import type * as PlatformError from "effect/PlatformError";
 import * as ServerConfig from "../config.ts";
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
@@ -2201,6 +2202,7 @@ it.effect("replays an accepted send after the project disables the instance", ()
 const makeRepositoryTaskHarness = Effect.fn("test.makeRepositoryTaskHarness")(function* (
   managedWorktree = false,
   scratchUnavailable = false,
+  agentWorktrees = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const directory = yield* fs.makeTempDirectoryScoped({ prefix: "repository-tasks-" });
@@ -2291,13 +2293,18 @@ const makeRepositoryTaskHarness = Effect.fn("test.makeRepositoryTaskHarness")(fu
     databaseLayer,
     providers: [provider],
     managedFolders,
-    ...(managedWorktree
+    ...(managedWorktree || agentWorktrees
       ? {
           createWorktree: (input) =>
             GitVcsDriver.GitVcsDriver.use((git) =>
               git.createWorktree({
                 ...input,
-                path: `${directory}/server-home/worktrees/first/feature`,
+                path: agentWorktrees
+                  ? `${directory}/agent-worktrees/${input.newRefName ?? "detached"}`.replaceAll(
+                      /[^\w/.-]/g,
+                      "-",
+                    )
+                  : `${directory}/server-home/worktrees/first/feature`,
               }),
             ).pipe(Effect.provide(layerGit), Effect.orDie),
         }
@@ -2802,6 +2809,186 @@ it.effect("repository task archive hides only tasks that can no longer run, and 
       );
     }).pipe(Effect.provide(harness.layer));
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+const runRepositoryTaskWithAgentWorktree = Effect.fn("test.runRepositoryTaskWithAgentWorktree")(
+  function* (
+    harness: Effect.Success<ReturnType<typeof makeRepositoryTaskHarness>>,
+    edit: (
+      memberRoot: string,
+      agentWorktree: string,
+    ) => Effect.Effect<void, PlatformError.PlatformError>,
+  ) {
+    const tasks = yield* RepositoryTasks.RepositoryTasks;
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const sink = yield* EventSink.EventSinkV2;
+    yield* tasks.upsertGroup({
+      id: harness.input.groupId,
+      title: "Group",
+      projectIds: [projectId, otherProjectId],
+    });
+    const task = yield* tasks.create(harness.input);
+    const member = task.snapshot.members.find((entry) => entry.projectId === projectId)!;
+    yield* tasks.dispatch(
+      { taskId: harness.input.id, projectId, role: "implementation", prompt: "Use an agent" },
+      task.snapshot.coordinatorThreadId,
+    );
+    const root = yield* threads.getThreadProjection(member.threadId);
+    const run = root.runs.find((entry) => entry.rootNodeId !== null)!;
+    const commandId = CommandId.make("agent-worktree-child");
+    yield* threads.dispatch({
+      type: "delegated_task.request",
+      commandId,
+      parentThreadId: root.thread.id,
+      parentRunId: run.id,
+      parentNodeId: run.rootNodeId!,
+      task: "Agent work",
+      role: "implementation",
+      modelSelection: harness.input.roles[0]!.modelSelection,
+      runtimeMode: harness.input.runtimeMode,
+      interactionMode: harness.input.interactionMode,
+      workspaceStrategy: { type: "worktree", baseRef: member.startingRevision },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const agent = (yield* threads.getThreadProjection(root.thread.id)).subagents[0]!;
+    const childRunId = (yield* threads.getThreadProjection(agent.childThreadId!)).runs[0]!.id;
+    yield* ThreadLaunch.ThreadLaunchService.use((launches) =>
+      launches.prepareRun({ commandId, threadId: agent.childThreadId!, runId: childRunId }),
+    );
+    yield* threads.streamStoredEventsFrom({ threadId: agent.childThreadId! }).pipe(
+      Stream.filter(
+        ({ event }) =>
+          event.type === "thread.metadata-updated" && event.payload.worktreePath != null,
+      ),
+      Stream.runHead,
+    );
+    const child = yield* threads.getThreadProjection(agent.childThreadId!);
+    yield* edit(harness.testProjects[0]!.workspaceRoot, child.thread.worktreePath!);
+    const settle = Effect.fn("test.settle")(function* (threadId: ThreadId) {
+      const projection = yield* threads.getThreadProjection(threadId);
+      const now = yield* DateTime.now;
+      // Synthetic provider output goes through the real event sink, never a fake receipt/store.
+      yield* sink.write({
+        events: [
+          ...projection.runs
+            .filter((entry) => entry.completedAt === null)
+            .map((entry) => ({
+              id: EventId.make(`finished:${entry.id}`),
+              threadId,
+              runId: entry.id,
+              occurredAt: now,
+              type: "run.updated" as const,
+              payload: { ...entry, status: "completed" as const, completedAt: now },
+            })),
+          ...projection.subagents.map((entry) => ({
+            id: EventId.make(`settled:${entry.id}`),
+            threadId,
+            ...(entry.runId === null ? {} : { runId: entry.runId }),
+            occurredAt: now,
+            type: "subagent.updated" as const,
+            payload: { ...entry, status: "completed" as const },
+          })),
+        ],
+      });
+    });
+    yield* settle(child.thread.id);
+    yield* settle(root.thread.id);
+    yield* tasks.reconcile(harness.input.id);
+    return { task, settle };
+  },
+);
+
+it.effect.each(["clean", "conflict"] as const)(
+  "repository task merges an agent worktree into the member workspace only without conflicts: %s",
+  (variant) =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness(false, false, true);
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const fs = yield* FileSystem.FileSystem;
+        const memberRoot = harness.testProjects[0]!.workspaceRoot;
+        const { task, settle } = yield* runRepositoryTaskWithAgentWorktree(
+          harness,
+          (root, worktree) =>
+            Effect.gen(function* () {
+              yield* fs.writeFileString(`${worktree}/agent.txt`, "agent result\n");
+              if (variant === "conflict")
+                yield* fs.writeFileString(`${root}/agent.txt`, "member result\n");
+            }),
+        );
+
+        const view = yield* tasks.get(harness.input.id);
+        const member = view.members.find((entry) => entry.snapshot.projectId === projectId)!;
+        assert.deepEqual(
+          member.merges.map((merge) => [merge.status, merge.files]),
+          [[variant === "clean" ? "applied" : "conflict", ["agent.txt"]]],
+        );
+        assert.equal(
+          yield* fs.readFileString(`${memberRoot}/agent.txt`),
+          variant === "clean" ? "agent result\n" : "member result\n",
+        );
+        const coordinator = yield* threads.getThreadProjection(task.snapshot.coordinatorThreadId);
+        assert.isTrue(
+          coordinator.messages.some((entry) =>
+            entry.text.includes(
+              variant === "clean" ? ": applied (agent.txt)" : ": conflict (agent.txt)",
+            ),
+          ),
+        );
+
+        yield* settle(task.snapshot.coordinatorThreadId);
+        yield* tasks.reconcile(harness.input.id);
+        const after = yield* tasks.get(harness.input.id);
+        if (variant === "clean") assert.equal(after.state, "finished");
+        else {
+          // A conflict keeps the task, and its claim on the repository, until the user resolves it.
+          assert.equal(after.state, "active");
+          assert.equal(
+            after.members.find((entry) => entry.snapshot.projectId === projectId)!.status,
+            "merge_conflict",
+          );
+        }
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "repository task recovery marks an interrupted merge uncertain and acknowledgement never writes it again",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRepositoryTaskHarness(false, false, true);
+      yield* Effect.gen(function* () {
+        const tasks = yield* RepositoryTasks.RepositoryTasks;
+        const sql = yield* SqlClient.SqlClient;
+        const fs = yield* FileSystem.FileSystem;
+        const memberRoot = harness.testProjects[0]!.workspaceRoot;
+        yield* runRepositoryTaskWithAgentWorktree(harness, (_root, worktree) =>
+          fs.writeFileString(`${worktree}/agent.txt`, "agent result\n"),
+        );
+        // The server stopped after recording the merge and before any file was written.
+        yield* sql`UPDATE repository_task_merges SET status = 'applying' WHERE task_id = ${harness.input.id}`;
+        yield* fs.remove(`${memberRoot}/agent.txt`);
+
+        yield* tasks.recover;
+        const recovered = yield* tasks.get(harness.input.id);
+        assert.equal(recovered.state, "uncertain");
+        assert.equal(
+          recovered.members.find((entry) => entry.snapshot.projectId === projectId)!.merges[0]!
+            .status,
+          "uncertain",
+        );
+
+        const acknowledged = yield* tasks.acknowledge(harness.input.id);
+        const merge = acknowledged.members.find((entry) => entry.snapshot.projectId === projectId)!
+          .merges[0]!;
+        assert.equal(merge.status, "failed");
+        assert.equal(merge.error, "The interrupted merge wrote nothing.");
+        assert.isFalse(yield* fs.exists(`${memberRoot}/agent.txt`));
+        assert.equal(acknowledged.state, "active");
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect(

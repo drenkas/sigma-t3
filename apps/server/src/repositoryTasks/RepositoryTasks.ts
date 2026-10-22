@@ -10,6 +10,7 @@ import {
   type RepositoryTaskDispatchInput,
   type RepositoryTask,
   type RepositoryTaskMemberSnapshot,
+  type RepositoryTaskMerge,
   type ModelSelection,
   type ProjectId,
   type OrchestrationV2Run,
@@ -30,6 +31,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as Admission from "./RepositoryTaskAdmission.ts";
+import * as Merge from "./RepositoryTaskMerge.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -61,6 +63,24 @@ type MemberRow = {
   prepared_path: string | null;
   prepared_revision: string | null;
 };
+type MergeRow = {
+  task_id: string;
+  project_id: ProjectId;
+  source_thread_id: ThreadId;
+  worktree_path: string;
+  status: RepositoryTaskMerge["status"];
+  base_commit: string | null;
+  ours_tree: string | null;
+  merged_tree: string | null;
+  files_json: string;
+  error: string | null;
+};
+// Only these let a task finish; the rest need the user's attention first.
+const settledMerge = (status: RepositoryTaskMerge["status"]) =>
+  status === "applied" || status === "empty";
+const MergeFiles = Schema.fromJsonString(Schema.Array(Schema.String));
+const decodeMergeFiles = Schema.decodeSync(MergeFiles);
+const encodeMergeFiles = Schema.encodeSync(MergeFiles);
 const decodeGroup = Schema.decodeUnknownEffect(Schema.fromJsonString(RepositoryGroup));
 const decodeSnapshot = Schema.decodeUnknownEffect(Schema.fromJsonString(RepositoryTaskSnapshot));
 const isRepositoryTaskError = Schema.is(RepositoryTaskError);
@@ -127,6 +147,7 @@ const make = Effect.gen(function* () {
   const receipts = yield* CommandReceipts.CommandReceiptStoreV2;
   const locks = yield* Admission.RepositoryTaskAdmission;
   const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const merger = yield* Merge.make;
   const changes = yield* PubSub.sliding<void>(1);
   const notifyChanged = PubSub.publish(changes, undefined).pipe(Effect.asVoid);
 
@@ -143,8 +164,17 @@ const make = Effect.gen(function* () {
       yield* sql<MemberRow>`SELECT * FROM repository_task_members WHERE task_id = ${taskId} ORDER BY project_id`.pipe(
         Effect.mapError(persistenceError),
       );
-    return { row, snapshot, members };
+    const merges =
+      yield* sql<MergeRow>`SELECT * FROM repository_task_merges WHERE task_id = ${taskId} ORDER BY ordinal`.pipe(
+        Effect.mapError(persistenceError),
+      );
+    return { row, snapshot, members, merges };
   });
+  const memberCwd = (member: MemberRow, snap: RepositoryTaskMemberSnapshot) =>
+    member.prepared_path ??
+    (snap.workspaceStrategy.type === "existing_worktree"
+      ? snap.workspaceStrategy.worktreePath
+      : snap.workspaceRoot);
   const project = Effect.fn("RepositoryTasks.project")(function* (projectId: ProjectId) {
     const found = yield* projects.getById(projectId).pipe(Effect.mapError(executionError));
     if (Option.isNone(found) || found.value.deletedAt !== null) return yield* fail("not-found");
@@ -279,7 +309,7 @@ const make = Effect.gen(function* () {
   const get = Effect.fn("RepositoryTasks.get")(function* (
     taskId: string,
   ): Effect.fn.Return<RepositoryTask, RepositoryTaskError> {
-    const { row, snapshot, members } = yield* readTask(taskId);
+    const { row, snapshot, members, merges } = yield* readTask(taskId);
     const coordinator = yield* records(snapshot.coordinatorThreadId);
     const graph: {
       nodes: Array<RepositoryTask["graph"]["nodes"][number]>;
@@ -336,14 +366,26 @@ const make = Effect.gen(function* () {
       if (!snap) return yield* fail("persistence");
       const record = yield* records(snap.threadId);
       const id = `thread:${snap.threadId}`;
+      const memberMerges = merges
+        .filter((merge) => merge.project_id === member.project_id)
+        .map((merge) => ({
+          sourceThreadId: merge.source_thread_id,
+          worktreePath: merge.worktree_path,
+          status: merge.status,
+          files: decodeMergeFiles(merge.files_json),
+          error: merge.error,
+        }));
+      const blockedMerge = memberMerges.find((merge) => !settledMerge(merge.status));
       const memberStatus =
-        member.launch_state === "pending"
-          ? "not_started"
-          : member.launch_state === "uncertain" || member.launch_state === "abandoned"
-            ? member.launch_state
-            : record !== null && settled(record) && !(yield* treeSettled(record))
-              ? "waiting"
-              : status(record);
+        blockedMerge !== undefined
+          ? `merge_${blockedMerge.status}`
+          : member.launch_state === "pending"
+            ? "not_started"
+            : member.launch_state === "uncertain" || member.launch_state === "abandoned"
+              ? member.launch_state
+              : record !== null && settled(record) && !(yield* treeSettled(record))
+                ? "waiting"
+                : status(record);
       views.push({
         snapshot: snap,
         role: member.role,
@@ -358,6 +400,7 @@ const make = Effect.gen(function* () {
             (request) => request.kind !== "user_input" && request.status === "pending",
           ) ?? false,
         deliveryState: member.delivery_state,
+        merges: memberMerges,
       });
       graph.nodes.push({
         id,
@@ -434,8 +477,10 @@ const make = Effect.gen(function* () {
                 ? "completed"
                 : finished
                   ? "interrupted"
-                  : views.some((member) => member.status === "waiting") ||
-                      coordinatorStatus === "waiting"
+                  : views.some(
+                        (member) =>
+                          member.status === "waiting" || member.status.startsWith("merge_"),
+                      ) || coordinatorStatus === "waiting"
                     ? "waiting"
                     : views.every((member) => member.launchState === "pending") &&
                         coordinatorStatus === "idle"
@@ -774,6 +819,110 @@ const make = Effect.gen(function* () {
     (effect, taskId) => locks.withLock(taskId, effect),
   );
 
+  /**
+   * Brings the work of a member's agents back into the member workspace. Each agent worktree is
+   * merged at most once; a conflict or failure writes nothing and leaves the worktree as it is.
+   */
+  const mergeAgentWorktrees = Effect.fn("RepositoryTasks.mergeAgentWorktrees")(function* (
+    taskId: string,
+    member: MemberRow,
+    snap: RepositoryTaskMemberSnapshot,
+    record: Records,
+  ) {
+    const cwd = yield* fs.realPath(memberCwd(member, snap)).pipe(Effect.mapError(executionError));
+    const known = new Set(
+      (yield* sql<{ source_thread_id: string }>`
+        SELECT source_thread_id FROM repository_task_merges WHERE task_id = ${taskId}
+      `.pipe(Effect.mapError(persistenceError))).map((row) => row.source_thread_id),
+    );
+    const sources: Array<{ threadId: ThreadId; worktreePath: string }> = [];
+    const collect: (parent: Records) => Effect.Effect<void, RepositoryTaskError> = Effect.fn(
+      "RepositoryTasks.collectAgentWorktrees",
+    )(function* (parent) {
+      for (const agent of parent.subagents) {
+        if (agent.origin !== "app_owned" || agent.childThreadId === null) continue;
+        const child = yield* records(agent.childThreadId);
+        if (child === null) continue;
+        if (child.thread.worktreePath !== null)
+          sources.push({ threadId: child.thread.id, worktreePath: child.thread.worktreePath });
+        yield* collect(child);
+      }
+    });
+    yield* collect(record);
+    for (const [ordinal, source] of sources.entries()) {
+      if (known.has(source.threadId)) continue;
+      const insert = (status: RepositoryTaskMerge["status"], fields: Partial<MergeRow> = {}) =>
+        sql`INSERT INTO repository_task_merges (task_id, project_id, source_thread_id, worktree_path, status, base_commit, ours_tree, merged_tree, files_json, error, ordinal)
+          VALUES (${taskId}, ${member.project_id}, ${source.threadId}, ${source.worktreePath}, ${status}, ${fields.base_commit ?? null}, ${fields.ours_tree ?? null}, ${fields.merged_tree ?? null}, ${fields.files_json ?? "[]"}, ${fields.error ?? null}, ${ordinal})`.pipe(
+          Effect.mapError(persistenceError),
+        );
+      const sourceCwd = yield* fs.realPath(source.worktreePath).pipe(Effect.option);
+      if (Option.isSome(sourceCwd) && sourceCwd.value === cwd) continue;
+      if (Option.isNone(sourceCwd)) {
+        yield* insert("failed", { error: "The agent worktree no longer exists." });
+        continue;
+      }
+      const plan = yield* merger.plan(cwd, sourceCwd.value).pipe(Effect.result);
+      if (plan._tag === "Failure") {
+        yield* insert("failed", { error: plan.failure.message });
+        continue;
+      }
+      if (plan.success.status !== "ready") {
+        yield* insert(plan.success.status, {
+          files_json: encodeMergeFiles(
+            plan.success.status === "conflict" ? plan.success.files : [],
+          ),
+        });
+        continue;
+      }
+      const ready = plan.success;
+      // Recorded before the first write, so a crash mid-write surfaces as uncertain on recovery.
+      yield* insert("applying", {
+        base_commit: ready.baseCommit,
+        ours_tree: ready.oursTree,
+        merged_tree: ready.mergedTree,
+        files_json: encodeMergeFiles(ready.files),
+      });
+      const applied = yield* merger.apply(cwd, ready).pipe(
+        Effect.catch((error) =>
+          merger.observe(cwd, ready.oursTree, ready.mergedTree).pipe(
+            Effect.map((observation) => ({ observation, error: error.message })),
+            Effect.orElseSucceed(() => ({
+              observation: "diverged" as const,
+              error: error.message,
+            })),
+          ),
+        ),
+        Effect.map((result) =>
+          typeof result === "string" ? { observation: result, error: null } : result,
+        ),
+      );
+      const status: RepositoryTaskMerge["status"] =
+        applied.observation === "after"
+          ? "applied"
+          : applied.observation === "before"
+            ? "failed"
+            : "uncertain";
+      yield* sql`UPDATE repository_task_merges SET status = ${status}, error = ${applied.error} WHERE task_id = ${taskId} AND source_thread_id = ${source.threadId}`.pipe(
+        Effect.mapError(persistenceError),
+      );
+    }
+    return yield* sql<MergeRow>`
+      SELECT * FROM repository_task_merges WHERE task_id = ${taskId} AND project_id = ${member.project_id} ORDER BY ordinal
+    `.pipe(Effect.mapError(persistenceError));
+  });
+  const mergeSummary = (merges: ReadonlyArray<MergeRow>) =>
+    merges.length === 0
+      ? ""
+      : `\nAgent worktrees merged into this repository's workspace:\n${merges
+          .map((merge) => {
+            const files = decodeMergeFiles(merge.files_json);
+            return `- ${merge.worktree_path}: ${merge.status}${files.length ? ` (${files.join(", ")})` : ""}${merge.error ? ` — ${merge.error}` : ""}`;
+          })
+          .join(
+            "\n",
+          )}${merges.some((merge) => !settledMerge(merge.status)) ? "\nUnmerged worktrees were left untouched; the task cannot finish until the user resolves them." : ""}\n`;
+
   // Finishing releases the task's repository claims, so it waits until the coordinator can no
   // longer dispatch and every launched participant's result has reached it.
   const finishIfDone = Effect.fn("RepositoryTasks.finishIfDone")(function* (
@@ -793,6 +942,10 @@ const make = Effect.gen(function* () {
       )
     )
       return;
+    const unsettledMerges = yield* sql<{ status: RepositoryTaskMerge["status"] }>`
+      SELECT status FROM repository_task_merges WHERE task_id = ${taskId}
+    `.pipe(Effect.mapError(persistenceError));
+    if (unsettledMerges.some((merge) => !settledMerge(merge.status))) return;
     const coordinator = yield* records(snapshot.coordinatorThreadId);
     if (coordinator === null || !(yield* treeSettled(coordinator))) return;
     yield* sql`UPDATE repository_tasks SET state = 'finished' WHERE id = ${taskId} AND state = 'active'`.pipe(
@@ -832,6 +985,9 @@ const make = Effect.gen(function* () {
             ? latestRun(record)!
             : record.runs.find((entry) => entry.id === member.result_run_id);
         if (run === undefined) return yield* fail("persistence");
+        const snap = snapshot.members.find((entry) => entry.projectId === member.project_id);
+        if (!snap) return yield* fail("persistence");
+        const merges = yield* mergeAgentWorktrees(taskId, member, snap, record);
         const body = record.messages
           .filter(
             (entry) => entry.role === "assistant" && entry.runId === run.id && !entry.streaming,
@@ -852,7 +1008,7 @@ const make = Effect.gen(function* () {
             attachments: [],
             createdBy: "agent",
             creationSource: "server",
-            text: `Repository task ${taskId}: project ${member.project_id} (${member.role}) finished with status ${run.status}.\nThread: ${member.thread_id}\n\n${body || "No final assistant result was recorded."}`,
+            text: `Repository task ${taskId}: project ${member.project_id} (${member.role}) finished with status ${run.status}.\nThread: ${member.thread_id}\n${mergeSummary(merges)}\n${body || "No final assistant result was recorded."}`,
           })
           .pipe(Effect.mapError(executionError));
         yield* sql`UPDATE repository_task_members SET delivery_state = 'delivered' WHERE task_id = ${taskId} AND project_id = ${member.project_id}`.pipe(
@@ -896,7 +1052,17 @@ const make = Effect.gen(function* () {
         Effect.mapError(persistenceError),
       );
     for (const row of rows) {
-      const { members } = yield* readTask(row.id);
+      const { members, merges } = yield* readTask(row.id);
+      // A merge that was writing when the server stopped may have written some files.
+      if (merges.some((merge) => merge.status === "applying"))
+        yield* sql
+          .withTransaction(
+            Effect.gen(function* () {
+              yield* sql`UPDATE repository_task_merges SET status = 'uncertain' WHERE task_id = ${row.id} AND status = 'applying'`;
+              yield* sql`UPDATE repository_tasks SET state = 'uncertain' WHERE id = ${row.id} AND state = 'active'`;
+            }),
+          )
+          .pipe(Effect.mapError(persistenceError));
       if (!(yield* coordinatorAccepted(row.id)))
         yield* sql`UPDATE repository_tasks SET state = 'uncertain' WHERE id = ${row.id}`.pipe(
           Effect.mapError(persistenceError),
@@ -915,7 +1081,24 @@ const make = Effect.gen(function* () {
   });
   const observeUncertain = Effect.fn("RepositoryTasks.observeUncertain")(
     function* (taskId: string) {
-      const { row, members } = yield* readTask(taskId);
+      const { row, snapshot, members, merges } = yield* readTask(taskId);
+      for (const merge of merges) {
+        if (merge.status !== "uncertain") continue;
+        const member = members.find((entry) => entry.project_id === merge.project_id);
+        const snap = snapshot.members.find((entry) => entry.projectId === merge.project_id);
+        if (!member || !snap) return yield* fail("persistence");
+        // Never writes again: the files decide whether the interrupted merge landed.
+        const observation =
+          merge.ours_tree === null || merge.merged_tree === null
+            ? "diverged"
+            : yield* fs.realPath(memberCwd(member, snap)).pipe(
+                Effect.flatMap((cwd) => merger.observe(cwd, merge.ours_tree!, merge.merged_tree!)),
+                Effect.orElseSucceed(() => "diverged" as const),
+              );
+        yield* sql`UPDATE repository_task_merges SET status = ${observation === "after" ? "applied" : "failed"}, error = ${observation === "after" ? null : observation === "before" ? "The interrupted merge wrote nothing." : "The workspace no longer matches either side of the interrupted merge."} WHERE task_id = ${taskId} AND source_thread_id = ${merge.source_thread_id} AND status = 'uncertain'`.pipe(
+          Effect.mapError(persistenceError),
+        );
+      }
       for (const member of members) {
         if (member.launch_state !== "uncertain") continue;
         const accepted = yield* memberAccepted(taskId, member.thread_id);
