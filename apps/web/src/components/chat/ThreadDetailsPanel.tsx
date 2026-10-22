@@ -185,9 +185,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     key={folder}
                     environmentId={props.environmentId}
                     folder={folder}
-                    activeThreadRef={activeThreadRef}
-                    draftId={props.draftId}
-                    compact={density !== "full"}
                   />
                 ))}
               </div>

@@ -230,8 +230,9 @@ Explorer onto the list. This works in the desktop app for projects on its own ma
 in any of the project's threads can read and edit every folder.
 
 The project's own folder stays the agent's working directory. Diffs, checkpoints, worktrees and
-the thread's branch only cover that folder. Each other folder gets its own branch, changes and
-commit, push and pull request actions in the thread's details panel. Claude, Codex,
+the thread's branch only cover that folder. In the thread's details panel each other folder has its
+own branch picker and Commit, Push and Pull. Push reads Publish while the branch is not on the
+remote yet. Claude, Codex,
 Cursor, Grok, Antigravity and ACP agents that support extra folders receive them. OpenCode, Pi
 and Muse only get the working folder.
 

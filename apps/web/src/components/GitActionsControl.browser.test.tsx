@@ -227,31 +227,3 @@ describe("Git action targets across thread navigation", () => {
     });
   });
 });
-
-describe("Git actions in a project's extra folder", () => {
-  it("leaves the thread's branch alone when the folder checks out a feature branch", async () => {
-    setup();
-    state.scopes.add(AuthOrchestrationOperateScope);
-    state.isDefaultRef = true;
-    await using _screen = await render(
-      <GitActionsControl
-        gitCwd="/docs"
-        tracksThreadBranch={false}
-        activeThreadRef={{
-          environmentId: EnvironmentId.make("environment"),
-          threadId: ThreadId.make("thread"),
-        }}
-      />,
-    );
-
-    await userEvent.click(button("Commit & push"));
-    await userEvent.click(button("Check out feature branch & continue"));
-
-    await vi.waitFor(() =>
-      expect(state.actions).toMatchObject([
-        { scope: { cwd: "/docs" }, input: { featureBranch: true, threadId: "thread" } },
-      ]),
-    );
-    expect(state.metadataRequests).toEqual([]);
-  });
-});
