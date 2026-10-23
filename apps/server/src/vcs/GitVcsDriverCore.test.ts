@@ -274,6 +274,59 @@ describe("pullCurrentBranch", () => {
     };
   });
 
+  it.effect("explains a pull that would overwrite uncommitted changes", () =>
+    Effect.gen(function* () {
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const { cwd, updater, initialBranch } = yield* cloneBehindRemote;
+      yield* writeTextFile(updater, "README.md", "remote edit\n");
+      yield* git(updater, ["commit", "-am", "remote edit"]);
+      yield* git(updater, ["push", "origin", initialBranch]);
+      const before = yield* git(cwd, ["rev-parse", "HEAD"]);
+      yield* writeTextFile(cwd, "README.md", "local edit\n");
+
+      const error = yield* Effect.flip(driver.pullCurrentBranch(cwd));
+
+      assert.include(error.detail, "would overwrite uncommitted changes");
+      assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), before);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("rebases unpushed commits onto a diverged upstream", () =>
+    Effect.gen(function* () {
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const { cwd, remoteHead } = yield* cloneBehindRemote;
+      yield* writeTextFile(cwd, "local.txt", "local\n");
+      yield* git(cwd, ["add", "local.txt"]);
+      yield* git(cwd, ["commit", "-m", "local commit"]);
+
+      const result = yield* driver.pullCurrentBranch(cwd);
+
+      assert.equal(result.status, "pulled");
+      assert.equal(yield* git(cwd, ["rev-parse", "HEAD~1"]), remoteHead);
+      assert.equal(yield* git(cwd, ["log", "-1", "--format=%s"]), "local commit");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("restores the branch when unpushed commits conflict with the upstream", () =>
+    Effect.gen(function* () {
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const fs = yield* FileSystem.FileSystem;
+      const { cwd } = yield* cloneBehindRemote;
+      yield* writeTextFile(cwd, "remote.txt", "local\n");
+      yield* git(cwd, ["add", "remote.txt"]);
+      yield* git(cwd, ["commit", "-m", "local commit"]);
+      const before = yield* git(cwd, ["rev-parse", "HEAD"]);
+
+      const error = yield* Effect.flip(driver.pullCurrentBranch(cwd));
+
+      assert.equal(error.operation, "GitVcsDriver.pullCurrentBranch.rebase");
+      assert.include(error.detail, "conflict");
+      assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), before);
+      assert.isFalse(yield* fs.exists(`${cwd}/.git/rebase-merge`));
+      assert.equal(yield* git(cwd, ["status", "--porcelain"]), "");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("still fetches other branches on the first pull", () =>
     Effect.gen(function* () {
       const driver = yield* GitVcsDriver.GitVcsDriver;
@@ -406,14 +459,12 @@ describe("pullCurrentBranch", () => {
         const driver = yield* withPaddedPull("stderr", (args) => pulls.push(args));
         yield* Effect.gen(function* () {
           const { cwd } = yield* cloneBehindRemote;
-          yield* writeTextFile(cwd, "local.txt", "local\n");
-          yield* git(cwd, ["add", "local.txt"]);
-          yield* git(cwd, ["commit", "-m", "local commit"]);
+          yield* writeTextFile(cwd, "remote.txt", "local\n");
 
           const error = yield* Effect.flip(driver.pullCurrentBranch(cwd));
 
           assert.equal(error.operation, "GitVcsDriver.pullCurrentBranch.pull");
-          assert.equal(error.exitCode, 128);
+          assert.equal(error.exitCode, 1);
           assert.notInclude(error.detail, "exceeded");
           assert.lengthOf(pulls, 1);
         }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, driver));

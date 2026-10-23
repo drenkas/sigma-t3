@@ -608,6 +608,36 @@ function fetchFailureDetail(stderr: string): string | undefined {
   return undefined;
 }
 
+// Git names the files involved, so like other quoted output they stay out of the detail.
+function pullFailureDetail(stderr: string): string | undefined {
+  if (
+    /^error: Your local changes to the following files would be overwritten by merge:/m.test(stderr)
+  ) {
+    return "Pulling would overwrite uncommitted changes. Commit or stash them, then pull again.";
+  }
+  if (
+    /^error: The following untracked working tree files would be overwritten by (?:merge|checkout):/m.test(
+      stderr,
+    )
+  ) {
+    return "Pulling would overwrite untracked files with files from the remote. Move or commit them, then pull again.";
+  }
+  if (
+    /^(?:error: Pulling is not possible because you have unmerged files|fatal: You have not concluded your merge)/m.test(
+      stderr,
+    )
+  ) {
+    return "A merge is still in progress. Finish or abort it, then pull again.";
+  }
+  if (/^error: cannot rebase: /m.test(stderr)) {
+    return "This branch and the remote both have new commits. Commit or stash uncommitted changes so the local commits can be rebased onto the remote, then pull again.";
+  }
+  if (/^error: could not apply /m.test(stderr)) {
+    return "Local commits conflict with the remote's, so the pull was undone. Rebase or merge this branch in a terminal to resolve the conflicts.";
+  }
+  return undefined;
+}
+
 // Matches a fetch that lost a ref update to another Git process. Git 2.53+
 // reports it as "fetching ref <ref> failed: ..."; older Git says "cannot lock ref".
 function isRefLockFailure(stderr: string): boolean {
@@ -2782,12 +2812,29 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         );
       }
     }
+    let operation = "GitVcsDriver.pullCurrentBranch.pull";
+    if (result.exitCode !== 0 && /^fatal: Not possible to fast-forward\b/m.test(result.stderr)) {
+      // The pull fetched, but unpushed commits keep it from fast-forwarding, and the client
+      // cannot push until it pulls. Replay those commits onto the upstream; on a conflict, put
+      // the branch back exactly as it was.
+      operation = "GitVcsDriver.pullCurrentBranch.rebase";
+      args = ["rebase", "--no-autostash", "@{upstream}"];
+      result = yield* executeGitWithStableDiagnostics(operation, cwd, args, options);
+      if (result.exitCode !== 0) {
+        yield* runGit("GitVcsDriver.pullCurrentBranch.rebaseAbort", cwd, ["rebase", "--abort"], {
+          allowNonZeroExit: true,
+        });
+      }
+    }
     if (result.exitCode !== 0) {
       const reason = classifyGitFailure(result.stderr);
       return yield* new GitCommandError({
-        ...gitCommandContext({ operation: "GitVcsDriver.pullCurrentBranch.pull", cwd, args }),
+        ...gitCommandContext({ operation, cwd, args }),
         ...(reason === null ? {} : { reason }),
-        detail: fetchFailureDetail(result.stderr) ?? "git pull failed",
+        detail:
+          pullFailureDetail(result.stderr) ??
+          fetchFailureDetail(result.stderr) ??
+          "git pull failed. Run git pull in a terminal to see Git's message.",
         exitCode: result.exitCode,
         stdoutLength: result.stdout.length,
         stderrLength: result.stderr.length,
