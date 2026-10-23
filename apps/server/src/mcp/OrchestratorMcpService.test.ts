@@ -1157,14 +1157,24 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
   );
 
-  it.effect("saves the team, reports it in capabilities, and clears it", () =>
+  it.effect("saves the team for the caller's project, reports it, and clears it", () =>
     Effect.gen(function* () {
+      const otherProjectId = ProjectId.make("project:mcp-other");
+      const otherTeam = [
+        { role: "architect", providerInstanceId: codexInstanceId, model: "gpt-5.4" },
+      ];
+      const projectProviders = { [codexInstanceId]: { enabled: true } };
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           getThreadRecords: () => Effect.succeed(parentProjection([])),
         }),
-        ServerSettings.layerTest(),
+        ServerSettings.layerTest({
+          projectSettingsOverrides: {
+            [projectId]: { providerInstances: projectProviders },
+            [otherProjectId]: { teamRoles: otherTeam },
+          },
+        }),
         Layer.mock(ProviderRegistry.ProviderRegistry)({
           getProviders: Effect.succeed([
             providerSnapshot({
@@ -1181,30 +1191,42 @@ describe("OrchestratorMcpService provider resolution", () => {
       );
       yield* Effect.gen(function* () {
         const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const serverSettings = yield* ServerSettings.ServerSettingsService;
         const reviewer = {
           role: "reviewer",
           providerInstanceId: codexInstanceId,
           model: "gpt-5.4",
           options: [{ id: "reasoningEffort", value: "high" }],
         };
-        yield* service.setTeamRoles({ roles: [reviewer] });
+        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, []);
+        yield* service.setTeamRoles(scope, { roles: [reviewer] });
         assert.deepEqual((yield* service.capabilities(scope)).teamRoles, [reviewer]);
+        const saved = (yield* serverSettings.getSettings).projectSettingsOverrides;
+        assert.deepEqual(saved[projectId], {
+          providerInstances: projectProviders,
+          teamRoles: [reviewer],
+        });
+        assert.deepEqual(saved[otherProjectId], { teamRoles: otherTeam });
 
         const unknown = yield* service
-          .setTeamRoles({
+          .setTeamRoles(scope, {
             roles: [{ ...reviewer, providerInstanceId: ProviderInstanceId.make("missing") }],
           })
           .pipe(Effect.flip);
         assert.equal(unknown.code, "invalid_request");
         const duplicate = yield* service
-          .setTeamRoles({ roles: [reviewer, { ...reviewer, role: "Reviewer" }] })
+          .setTeamRoles(scope, { roles: [reviewer, { ...reviewer, role: "Reviewer" }] })
           .pipe(Effect.flip);
         assert.equal(duplicate.code, "invalid_request");
         assert.deepEqual((yield* service.capabilities(scope)).teamRoles, [reviewer]);
 
-        yield* service.setTeamRoles({ roles: [] });
+        yield* service.setTeamRoles(scope, { roles: [] });
         assert.deepEqual((yield* service.capabilities(scope)).teamRoles, []);
-      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+        assert.deepEqual(
+          (yield* serverSettings.getSettings).projectSettingsOverrides[otherProjectId],
+          { teamRoles: otherTeam },
+        );
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provideMerge(layerDependencies))));
     }),
   );
 

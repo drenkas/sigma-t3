@@ -1,6 +1,13 @@
-import type { TeamRoles } from "@t3tools/contracts";
+import type { ProjectId, ServerSettings, TeamRoles } from "@t3tools/contracts";
 
 const ROLES_COMMAND = /^\/roles(?:\s+([\s\S]*))?$/i;
+
+export function projectTeamRoles(
+  settings: Pick<ServerSettings, "projectSettingsOverrides">,
+  projectId: ProjectId,
+): TeamRoles {
+  return settings.projectSettingsOverrides[projectId]?.teamRoles ?? [];
+}
 
 /**
  * The saved team, in the words the base orchestration instructions use for it.
@@ -35,15 +42,15 @@ export function expandRolesCommand(text: string): string | null {
 2. Then go through the roles one at a time. For each, suggest two or three models from the catalog that suit the role, mark the one you recommend and why in a few words, and wait for the user's answer before moving to the next role.
 3. After the last role, show the whole team and save it once the user confirms.`
       : /^(clear|reset|remove|none)$/i.test(args)
-        ? "The user ran /roles to clear the team. Save an empty team and confirm it is gone."
+        ? "The user ran /roles to clear this project's team. Save an empty team and confirm it is gone."
         : `The user ran /roles with this team:
 <roles>
 ${args}
 </roles>
 Match each role to a provider instance and model from the catalog, saving any options they named, such as effort. Ask only about a model you cannot match or that is ambiguous. If any role has no model, suggest models for it the way an interview would. Then show the team and save it.`;
   return `<t3_roles_command>
-The user is setting up their agent team: the model for each role, which every conversation starts with.
-Call orchestrator_capabilities first: it lists the current team as teamRoles and the models you can choose from. Search it when the user names a model the short list leaves out.
+The user is setting up the agent team for this conversation's project: the model for each role, which every conversation in the project starts with. Other projects keep their own teams.
+Call orchestrator_capabilities first: it lists the project's current team as teamRoles and the models you can choose from. Search it when the user names a model the short list leaves out.
 ${request}
 Save with team_roles_set, sending the whole team. A role's description is one sentence on what it does. Reply in the user's language. If team_roles_set is not available, say the team could not be saved here.
 </t3_roles_command>`;

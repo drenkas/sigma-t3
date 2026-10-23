@@ -113,6 +113,7 @@ import {
 } from "./McpInvocationContext.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import { projectTeamRoles } from "../orchestration-v2/TeamRoles.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
@@ -184,6 +185,7 @@ export interface OrchestratorMcpServiceShape {
     input: OrchestratorMcpRequestSecretInput,
   ) => Effect.Effect<OrchestratorMcpRequestSecretResult, OrchestratorMcpFailure>;
   readonly setTeamRoles: (
+    scope: McpInvocationScope,
     input: OrchestratorMcpTeamRolesSetInput,
   ) => Effect.Effect<OrchestratorMcpTeamRolesSetResult, OrchestratorMcpFailure>;
   readonly listThreads: (
@@ -2145,10 +2147,11 @@ const make = Effect.gen(function* () {
           scheduledTasks: true,
           maxBatchThreads: 20,
         },
-        teamRoles: settings.teamRoles,
+        teamRoles: parent === undefined ? [] : projectTeamRoles(settings, parent.thread.projectId),
       };
     }),
-    setTeamRoles: Effect.fn("OrchestratorMcpService.setTeamRoles")(function* (input) {
+    setTeamRoles: Effect.fn("OrchestratorMcpService.setTeamRoles")(function* (callerScope, input) {
+      const { parent } = yield* loadThreadCaller(callerScope, "team_roles_set");
       const names = input.roles.map((role) => role.role.toLowerCase());
       if (new Set(names).size !== names.length) {
         return yield* failure("invalid_request", "Each role needs its own name.");
@@ -2163,10 +2166,17 @@ const make = Effect.gen(function* () {
           `Unknown provider instance for ${unknown.map((role) => role.role).join(", ")}. Use a providerInstanceId from orchestrator_capabilities.`,
         );
       }
+      const projectId = parent.thread.projectId;
+      const saveFailure = () => failure("orchestration_error", "Unable to save the team.");
+      const current = yield* serverSettings.getSettings.pipe(Effect.mapError(saveFailure));
       const settings = yield* serverSettings
-        .updateSettings({ teamRoles: input.roles })
-        .pipe(Effect.mapError(() => failure("orchestration_error", "Unable to save the team.")));
-      return { teamRoles: settings.teamRoles };
+        .updateSettings({
+          projectSettingsOverrides: {
+            [projectId]: { ...current.projectSettingsOverrides[projectId], teamRoles: input.roles },
+          },
+        })
+        .pipe(Effect.mapError(saveFailure));
+      return { teamRoles: projectTeamRoles(settings, projectId) };
     }),
     delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
       const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");

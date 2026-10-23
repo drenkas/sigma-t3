@@ -69,7 +69,7 @@ const OrchestratorCapabilitiesTool = Tool.make("orchestrator_capabilities", {
 
 const TeamRolesSetTool = Tool.make("team_roles_set", {
   description:
-    "Save the user's agent team: one model for each role, replacing the saved team. Every new conversation starts with this team, and orchestrator_capabilities returns it as teamRoles. Call it only when the user asked to set up or change the team, such as through /roles, after they confirmed the roles and models. Pass [] to clear the team.",
+    "Needs an agent running inside a T3 thread. Save the agent team for this thread's project: one model for each role, replacing that project's saved team. Other projects keep their own teams. Every new conversation in the project starts with this team, and orchestrator_capabilities returns it as teamRoles. Call it only when the user asked to set up or change the team, such as through /roles, after they confirmed the roles and models. Pass [] to clear the team.",
   parameters: OrchestratorMcpTeamRolesSetInput,
   success: OrchestratorMcpTeamRolesSetResult,
   failure: OrchestratorMcpFailure,

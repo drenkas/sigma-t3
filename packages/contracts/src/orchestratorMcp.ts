@@ -582,7 +582,7 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
   }),
   teamRoles: TeamRoles.annotate({
     description:
-      "The user's saved team: the model for each role. Delegate a role's work to its model.",
+      "The team saved for this thread's project: the model for each role. Delegate a role's work to its model. Empty outside a T3 thread.",
   }),
 });
 export type OrchestratorMcpCapabilitiesResult = typeof OrchestratorMcpCapabilitiesResult.Type;
@@ -590,7 +590,7 @@ export type OrchestratorMcpCapabilitiesResult = typeof OrchestratorMcpCapabiliti
 export const OrchestratorMcpTeamRolesSetInput = Schema.Struct({
   roles: TeamRoles.annotate({
     description:
-      "The whole team, replacing the saved one; [] clears it. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. description says what the role does, in a sentence.",
+      "The whole team for this thread's project, replacing the one saved there; [] clears it. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. description says what the role does, in a sentence.",
   }),
 });
 export type OrchestratorMcpTeamRolesSetInput = typeof OrchestratorMcpTeamRolesSetInput.Type;

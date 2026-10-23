@@ -58,7 +58,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
-import { expandRolesCommand, teamRolesNote } from "./TeamRoles.ts";
+import { expandRolesCommand, projectTeamRoles, teamRolesNote } from "./TeamRoles.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -1103,7 +1103,7 @@ export const layer: Layer.Layer<
           ? ""
           : teamRolesNote(
               yield* serverSettings.getSettings.pipe(
-                Effect.map((settings) => settings.teamRoles),
+                Effect.map((settings) => projectTeamRoles(settings, projection.thread.projectId)),
                 Effect.orElseSucceed(() => []),
               ),
             );

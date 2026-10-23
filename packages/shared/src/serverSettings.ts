@@ -276,12 +276,17 @@ function mergeProjectSettingsOverridesPatch(
       next.delete(projectId);
       continue;
     }
-    const storedProviderInstances = current[projectId]?.providerInstances;
+    const stored = current[projectId];
+    // A settings client edits these through other paths, so an entry built
+    // without them must not wipe them.
     next.set(projectId, {
       ...entry,
-      ...(Object.hasOwn(entry, "providerInstances") || storedProviderInstances === undefined
+      ...(Object.hasOwn(entry, "providerInstances") || stored?.providerInstances === undefined
         ? {}
-        : { providerInstances: storedProviderInstances }),
+        : { providerInstances: stored.providerInstances }),
+      ...(Object.hasOwn(entry, "teamRoles") || stored?.teamRoles === undefined
+        ? {}
+        : { teamRoles: stored.teamRoles }),
     });
   }
   return Object.fromEntries(next);

@@ -1,7 +1,11 @@
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { ProviderDriverKind, ProviderReplayTranscript, TeamRoles } from "@t3tools/contracts";
+import type {
+  ProviderDriverKind,
+  ProviderReplayTranscript,
+  ServerSettings as ServerSettingsSchema,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -270,7 +274,7 @@ export function layerWithRegistry<Error>(
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
-    readonly teamRoles?: TeamRoles;
+    readonly projectSettingsOverrides?: ServerSettingsSchema["projectSettingsOverrides"];
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -303,7 +307,9 @@ export function layerWithRegistry<Error>(
     ...(options.continueThreadsAfterServerUpdate === undefined
       ? {}
       : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
-    ...(options.teamRoles === undefined ? {} : { teamRoles: options.teamRoles }),
+    ...(options.projectSettingsOverrides === undefined
+      ? {}
+      : { projectSettingsOverrides: options.projectSettingsOverrides }),
   }).pipe(Layer.orDie);
   const layerStores = Layer.mergeAll(
     EventStore.layer,

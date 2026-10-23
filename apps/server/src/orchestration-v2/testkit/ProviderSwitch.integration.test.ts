@@ -466,6 +466,7 @@ describe("orchestration v2 provider switching", () => {
           const first = yield* run(1, "Plan the release");
           assert.include(first, "<t3_team_roles>");
           assert.include(first, "- reviewer (providerInstanceId codex, model gpt-5.5)");
+          assert.notInclude(first, "other-project-role");
           assert.include(first, "Plan the release");
 
           const second = yield* run(2, "/roles reviewer: opus");
@@ -489,13 +490,26 @@ describe("orchestration v2 provider switching", () => {
               },
               registry,
               {
-                teamRoles: [
-                  {
-                    role: "reviewer",
-                    providerInstanceId: ProviderInstanceId.make("codex"),
-                    model: "gpt-5.5",
+                projectSettingsOverrides: {
+                  [projectId]: {
+                    teamRoles: [
+                      {
+                        role: "reviewer",
+                        providerInstanceId: ProviderInstanceId.make("codex"),
+                        model: "gpt-5.5",
+                      },
+                    ],
                   },
-                ],
+                  [ProjectId.make("project:other")]: {
+                    teamRoles: [
+                      {
+                        role: "other-project-role",
+                        providerInstanceId: ProviderInstanceId.make("codex"),
+                        model: "gpt-5.5",
+                      },
+                    ],
+                  },
+                },
               },
             ),
           ),

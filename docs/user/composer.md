@@ -249,9 +249,10 @@ Send `/roles` to choose which model handles each role, such as architect,
 implementer, or reviewer. Name the team right after the command, for example
 `/roles architect: opus, reviewer: gpt-5.5 high`, or send `/roles` alone and the
 agent asks which roles you want and suggests models for each one. It saves the
-team once you confirm. `/roles clear` removes it.
+team for the project you ran the command in once you confirm, so each project
+keeps its own team. `/roles clear` removes the project's team.
 
-Every new conversation starts with the saved team, and the agent delegates each
+Every new conversation in that project starts with its team, and the agent delegates each
 role's work to its model. A model you name in a message still wins. The command
 must start the message, and the agent needs T3 Code's tools to save the team.
 

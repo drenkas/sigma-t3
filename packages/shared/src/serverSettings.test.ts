@@ -478,15 +478,17 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("keeps a project's providerInstances override when a patch entry omits the key", () => {
+  it("keeps a project's providerInstances and team when a patch entry omits them", () => {
     const instanceId = ProviderInstanceId.make("codex_work");
     const projectId = ProjectId.make("project-a");
+    const teamRoles = [{ role: "reviewer", providerInstanceId: instanceId, model: "gpt-5.5" }];
     const current = {
       ...DEFAULT_SERVER_SETTINGS,
       projectSettingsOverrides: {
         [projectId]: {
           newWorktreesStartFromOrigin: true,
           providerInstances: { [instanceId]: { enabled: false } },
+          teamRoles,
         },
       },
     };
@@ -500,6 +502,7 @@ describe("serverSettings helpers", () => {
     expect(patched.projectSettingsOverrides[projectId]).toEqual({
       newWorktreesStartFromOrigin: false,
       providerInstances: { [instanceId]: { enabled: false } },
+      teamRoles,
     });
   });
 
