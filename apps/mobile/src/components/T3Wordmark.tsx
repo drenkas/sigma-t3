@@ -10,16 +10,16 @@ export function T3Wordmark(props: {
   readonly color?: ColorValue;
   readonly colorClassName?: string;
 }) {
-  const aspectRatio = 66 / 90;
+  const aspectRatio = 60 / 90;
   return (
     <Svg
       accessibilityLabel="Sigma"
       height={props.height}
       width={props.height * aspectRatio}
-      viewBox="21 17 66 90"
+      viewBox="21 17 60 90"
     >
       <ThemedPath
-        d="M78 26H30L56 62L30 98H70"
+        d="M72 26H30L56 62L30 98H72"
         color={props.color}
         colorClassName={props.colorClassName}
         fill="none"
@@ -29,7 +29,7 @@ export function T3Wordmark(props: {
         strokeLinejoin="round"
       />
       <ThemedPath
-        d="M69 26A9 9 0 1 0 87 26A9 9 0 1 0 69 26ZM21 26A9 9 0 1 0 39 26A9 9 0 1 0 21 26ZM21 98A9 9 0 1 0 39 98A9 9 0 1 0 21 98ZM61 98A9 9 0 1 0 79 98A9 9 0 1 0 61 98ZM44 62A12 12 0 1 0 68 62A12 12 0 1 0 44 62Z"
+        d="M63 26A9 9 0 1 0 81 26A9 9 0 1 0 63 26ZM21 26A9 9 0 1 0 39 26A9 9 0 1 0 21 26ZM21 98A9 9 0 1 0 39 98A9 9 0 1 0 21 98ZM63 98A9 9 0 1 0 81 98A9 9 0 1 0 63 98ZM44 62A12 12 0 1 0 68 62A12 12 0 1 0 44 62Z"
         color={props.color}
         colorClassName={props.colorClassName}
         fill="currentColor"
