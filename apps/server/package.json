@@ -86,6 +86,13 @@
     "graphql": "16.14.1",
     "vite-plus": "catalog:"
   },
+  "optionalDependencies": {
+    "sherpa-onnx-darwin-arm64": "1.12.37",
+    "sherpa-onnx-darwin-x64": "1.12.37",
+    "sherpa-onnx-linux-arm64": "1.12.37",
+    "sherpa-onnx-linux-x64": "1.12.37",
+    "sherpa-onnx-win-x64": "1.12.37"
+  },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
   }

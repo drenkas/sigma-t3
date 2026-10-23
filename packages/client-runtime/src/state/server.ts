@@ -1359,6 +1359,25 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:check-otlp-endpoint",
       tag: WS_METHODS.serverCheckOtlpEndpoint,
     }),
+    speechStatus: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:speech:status",
+      tag: WS_METHODS.subscribeSpeechStatus,
+      idleTtlMs: 0,
+    }),
+    installSpeechModel: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:speech:install-model",
+      tag: WS_METHODS.speechInstallModel,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    removeSpeechModel: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:speech:remove-model",
+      tag: WS_METHODS.speechRemoveModel,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    transcribeSpeech: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:speech:transcribe",
+      tag: WS_METHODS.speechTranscribe,
+    }),
     retryResourceTelemetry: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:retry-resource-telemetry",
       tag: WS_METHODS.serverRetryResourceTelemetry,

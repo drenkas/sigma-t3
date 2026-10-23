@@ -203,6 +203,12 @@ import {
   PullRequestUpdateInput,
 } from "./pullRequest.ts";
 import {
+  SpeechError,
+  SpeechStatus,
+  SpeechTranscribeInput,
+  SpeechTranscribeResult,
+} from "./speech.ts";
+import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
   RelayClientStatusSchema,
@@ -524,6 +530,10 @@ export const WS_METHODS = {
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
 
+  speechInstallModel: "speech.installModel",
+  speechRemoveModel: "speech.removeModel",
+  speechTranscribe: "speech.transcribe",
+
   pullRequestsList: "pullRequests.list",
   pullRequestsListStats: "pullRequests.listStats",
   pullRequestsSummary: "pullRequests.summary",
@@ -578,6 +588,7 @@ export const WS_METHODS = {
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
+  subscribeSpeechStatus: "subscribeSpeechStatus",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
 } as const;
 
@@ -922,6 +933,24 @@ const WsCloudInstallRelayClientRpc = Rpc.make(WS_METHODS.cloudInstallRelayClient
   success: RelayClientInstallProgressEventSchema,
   error: Schema.Union([RelayClientInstallFailedError, EnvironmentAuthorizationError]),
   stream: true,
+});
+
+const WsSpeechInstallModelRpc = Rpc.make(WS_METHODS.speechInstallModel, {
+  payload: Schema.Struct({}),
+  success: SpeechStatus,
+  error: Schema.Union([SpeechError, EnvironmentAuthorizationError]),
+});
+
+const WsSpeechRemoveModelRpc = Rpc.make(WS_METHODS.speechRemoveModel, {
+  payload: Schema.Struct({}),
+  success: SpeechStatus,
+  error: Schema.Union([SpeechError, EnvironmentAuthorizationError]),
+});
+
+const WsSpeechTranscribeRpc = Rpc.make(WS_METHODS.speechTranscribe, {
+  payload: SpeechTranscribeInput,
+  success: SpeechTranscribeResult,
+  error: Schema.Union([SpeechError, EnvironmentAuthorizationError]),
 });
 
 const WsServerReportClientActivityRpc = Rpc.make(WS_METHODS.serverReportClientActivity, {
@@ -1867,6 +1896,13 @@ const WsSubscribeBackgroundPolicyRpc = Rpc.make(WS_METHODS.subscribeBackgroundPo
   stream: true,
 });
 
+const WsSubscribeSpeechStatusRpc = Rpc.make(WS_METHODS.subscribeSpeechStatus, {
+  payload: Schema.Struct({}),
+  success: SpeechStatus,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTelemetry, {
   payload: Schema.Struct({}),
   success: ResourceTelemetrySnapshot,
@@ -1946,6 +1982,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetBackgroundPolicyRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
+  WsSpeechInstallModelRpc,
+  WsSpeechRemoveModelRpc,
+  WsSpeechTranscribeRpc,
   WsPullRequestsListRpc,
   WsPullRequestsListStatsRpc,
   WsPullRequestsSummaryRpc,
@@ -2061,6 +2100,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
+  WsSubscribeSpeechStatusRpc,
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
