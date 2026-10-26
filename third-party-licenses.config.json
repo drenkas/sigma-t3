@@ -868,6 +868,21 @@
       "name": "iobuffer",
       "license": "MIT",
       "sourceUrl": "https://github.com/image-js/iobuffer"
+    },
+    {
+      "repositoryUrl": "https://github.com/csukuangfj/sherpa-onnx",
+      "license": "Apache-2.0 AND MIT",
+      "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx",
+      "generatedNotices": [
+        {
+          "licenseId": "Apache-2.0"
+        },
+        {
+          "licenseId": "MIT",
+          "preamble": ["The bundled libonnxruntime is ONNX Runtime:\nhttps://github.com/microsoft/onnxruntime"],
+          "copyrights": ["Copyright (c) Microsoft Corporation"]
+        }
+      ]
     }
   ]
 }
