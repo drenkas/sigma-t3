@@ -460,6 +460,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
   },
   {
+    id: "voice-input",
+    title: "Voice input",
+    to: "/settings/general",
+    searchTerms: ["dictation dictate microphone mic speech transcribe voice parakeet model"],
+  },
+  {
     id: "composer-collapse",
     title: "Collapse composer on scroll",
     to: "/settings/general",

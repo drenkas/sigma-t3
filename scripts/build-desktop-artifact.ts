@@ -1418,6 +1418,24 @@ export function resolveFffNativeDependencies(
   );
 }
 
+/** The server loads the speech recognizer addon by name, so only the target's build ships. */
+export function resolveSherpaNativeDependencies(
+  platform: typeof BuildPlatform.Type,
+  arch: typeof BuildArch.Type,
+  version: string,
+): Record<string, string> {
+  const architectures = arch === "universal" ? (["arm64", "x64"] as const) : [arch];
+  const os = platform === "mac" ? "darwin" : platform;
+  return Object.fromEntries(
+    architectures
+      // sherpa-onnx publishes no Windows arm64 build.
+      .filter((architecture) => !(platform === "win" && architecture === "arm64"))
+      .map((architecture) => [`sherpa-onnx-${os}-${architecture}`, version]),
+  );
+}
+
+const SHERPA_ONNX_VERSION = serverPackageJson.optionalDependencies["sherpa-onnx-darwin-arm64"];
+
 // macOS and Linux share one app.asar; stage the union of both bundles' external dependencies.
 export function resolveMergedStageDependencies(input: {
   readonly platform: "mac" | "linux";
@@ -1425,11 +1443,15 @@ export function resolveMergedStageDependencies(input: {
   readonly desktopDependencies: Record<string, string>;
   readonly arch: typeof BuildArch.Type;
   readonly fffNodeVersion: string;
+  readonly sherpaVersion?: string;
 }) {
   return {
     ...selectCliRuntimeExternalDependencies(input.serverDependencies),
     ...input.desktopDependencies,
     ...resolveFffNativeDependencies(input.platform, input.arch, input.fffNodeVersion),
+    ...(input.sherpaVersion === undefined
+      ? {}
+      : resolveSherpaNativeDependencies(input.platform, input.arch, input.sherpaVersion)),
   };
 }
 
@@ -3078,6 +3100,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   const sidecarDependencies = {
     ...input.runtimeExternalDependencies,
     ...resolveFffNativeDependencies("win", input.arch, input.fffNodeVersion),
+    ...resolveSherpaNativeDependencies("win", input.arch, SHERPA_ONNX_VERSION),
   };
   const sidecarPatchedDependencies = createStagePatchedDependencies(
     input.patchedDependencies,
@@ -3793,6 +3816,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
           desktopDependencies: resolvedDesktopRuntimeDependencies,
           arch: options.arch,
           fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
+          sherpaVersion: SHERPA_ONNX_VERSION,
         });
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,

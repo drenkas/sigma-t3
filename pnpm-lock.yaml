@@ -986,6 +986,22 @@ importers:
       vite-plus:
         specifier: 1.4.0
         version: 1.4.0(@astrojs/compiler-rs@0.5.1)(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
+    optionalDependencies:
+      sherpa-onnx-darwin-arm64:
+        specifier: 1.12.37
+        version: 1.12.37
+      sherpa-onnx-darwin-x64:
+        specifier: 1.12.37
+        version: 1.12.37
+      sherpa-onnx-linux-arm64:
+        specifier: 1.12.37
+        version: 1.12.37
+      sherpa-onnx-linux-x64:
+        specifier: 1.12.37
+        version: 1.12.37
+      sherpa-onnx-win-x64:
+        specifier: 1.12.37
+        version: 1.12.37
 
   apps/web:
     dependencies:
@@ -11188,6 +11204,31 @@ packages:
   shell-quote@1.10.0:
     resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
     engines: {node: '>= 0.4'}
+
+  sherpa-onnx-darwin-arm64@1.12.37:
+    resolution: {integrity: sha512-zpqbH+2TI6dvg7mxGm30Mnv17aJL3ZfRGshMiBK85dHBfhzqMbKUHNXCzsHhiKBQTzti6JqG1YoRbYrJwvdUjA==}
+    cpu: [arm64]
+    os: [darwin]
+
+  sherpa-onnx-darwin-x64@1.12.37:
+    resolution: {integrity: sha512-2mB1BhEJJLG8Ow/YGAe7c3AL5fSkk9qDk3wmZRsfDW+Gno5eBaUusXseDI0ltjh2mZcW74l9F19ez4CyhwqNQQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  sherpa-onnx-linux-arm64@1.12.37:
+    resolution: {integrity: sha512-6yVnp7ucK4oJEjUfKbkyvJm+e6UdETTp7PnWFb1+Wr6nxSCN038BGSACCIKlVHEsQl+6huwrvymljkWrIro1mA==}
+    cpu: [arm64]
+    os: [linux]
+
+  sherpa-onnx-linux-x64@1.12.37:
+    resolution: {integrity: sha512-WF69clWjTlBu6NIBdL8OLEEN4NwOlYjjB/AjCMs29pB6gtSzKJEKIjmTATfaSSExTGPeXsOriCXcMdHaMH4WNg==}
+    cpu: [x64]
+    os: [linux]
+
+  sherpa-onnx-win-x64@1.12.37:
+    resolution: {integrity: sha512-1h1UrJxzA1vkOO2G8JqRQkF9SfEhM/LYW+yFki5izCY5N+eaaxYKdZLmVZI3KAhxk28pkE6dnMETYi0nj2/Cuw==}
+    cpu: [x64]
+    os: [win32]
 
   shiki@4.2.0:
     resolution: {integrity: sha512-hjNax6o/ylDy9lefQEaSDtzaT3iVNtZ3WmpQnbuQNoG4xvnSKf2kSKbihZVO4JRG1TTMejs7CmNRYlWgAL66pQ==}
@@ -21930,6 +21971,21 @@ snapshots:
   shebang-regex@3.0.0: {}
 
   shell-quote@1.10.0: {}
+
+  sherpa-onnx-darwin-arm64@1.12.37:
+    optional: true
+
+  sherpa-onnx-darwin-x64@1.12.37:
+    optional: true
+
+  sherpa-onnx-linux-arm64@1.12.37:
+    optional: true
+
+  sherpa-onnx-linux-x64@1.12.37:
+    optional: true
+
+  sherpa-onnx-win-x64@1.12.37:
+    optional: true
 
   shiki@4.2.0:
     dependencies:

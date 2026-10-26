@@ -195,6 +195,21 @@ microphone.
 Transcription runs on your device. T3 Code deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
 
+## Voice input on web and desktop
+
+Turn on **Settings → General → Voice input**, then select **Download model** to
+fetch the speech model (Parakeet TDT v3, about 670 MB) onto the environment. It
+understands 25 European languages, including English and Ukrainian.
+
+Select the microphone in the composer to start recording and select it again to
+stop. The text is inserted at the cursor for you to review before sending.
+Recordings can be up to five minutes long. The first dictation after a pause can
+take a few seconds while the model loads.
+
+Transcription runs on the environment you are connected to, not on a cloud
+service, so it also works from a remote browser. The audio is discarded once it is
+transcribed. **Remove model** deletes the downloaded files.
+
 ## Queued messages
 
 On web and desktop, the composer shows **Interrupt** while the agent is working and the draft is

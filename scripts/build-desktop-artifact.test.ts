@@ -40,6 +40,7 @@ import {
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
+  resolveSherpaNativeDependencies,
   resolveBuildOptions,
   resolveDesktopProductName,
   resolveGitHubPublishConfig,
@@ -693,6 +694,29 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "@ff-labs/fff-bin-linux-x64-musl": "0.9.4",
       },
     );
+  });
+
+  it("stages the speech recognizer build for each target architecture", () => {
+    assert.deepStrictEqual(
+      resolveMergedStageDependencies({
+        platform: "mac",
+        serverDependencies: {},
+        desktopDependencies: {},
+        arch: "universal",
+        fffNodeVersion: "0.9.4",
+        sherpaVersion: "1.12.37",
+      }),
+      {
+        "@ff-labs/fff-bin-darwin-arm64": "0.9.4",
+        "@ff-labs/fff-bin-darwin-x64": "0.9.4",
+        "sherpa-onnx-darwin-arm64": "1.12.37",
+        "sherpa-onnx-darwin-x64": "1.12.37",
+      },
+    );
+    assert.deepStrictEqual(resolveSherpaNativeDependencies("win", "x64", "1.12.37"), {
+      "sherpa-onnx-win-x64": "1.12.37",
+    });
+    assert.deepStrictEqual(resolveSherpaNativeDependencies("win", "arm64", "1.12.37"), {});
   });
 
   it.effect("ships Cursor platform assets outside asar for spawning and native loading", () =>
