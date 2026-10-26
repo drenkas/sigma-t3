@@ -132,6 +132,7 @@ export function ExecutionGraph({
 
   // Keeps the whole tree in view while it grows, until the user pans or zooms.
   const { width, height } = layout;
+  // oxlint-disable-next-line t3code/react-effect-budget -- subscribes to the viewport's ResizeObserver
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -144,6 +145,7 @@ export function ExecutionGraph({
   }, [viewportRef, width, height]);
 
   // React registers wheel listeners as passive, and zooming has to keep the page from scrolling.
+  // oxlint-disable-next-line t3code/react-effect-budget -- needs a non-passive native wheel listener
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;

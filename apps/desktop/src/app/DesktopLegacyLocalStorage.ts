@@ -17,7 +17,7 @@ export const layer = Layer.succeed(
   DesktopLegacyLocalStorage,
   DesktopLegacyLocalStorage.of({
     load: (_userDataPath) => Effect.void,
-    take: Effect.succeed(Option.none()),
+    take: Effect.succeedNone,
     complete: Effect.void,
   }),
 );
