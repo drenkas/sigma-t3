@@ -58,6 +58,8 @@ fi
 echo "==> Building ${APP_NAME} ${VERSION} from $(git rev-parse --short HEAD)"
 
 "${PNPM[@]}" install --frozen-lockfile
+# Bakes the official T3 Connect public identifiers (relay, Clerk) into the build.
+cp .env.example .env
 "${PNPM[@]}" exec node scripts/update-release-package-versions.ts "$VERSION"
 
 rm -rf release

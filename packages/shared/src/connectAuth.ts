@@ -7,8 +7,7 @@ const CONNECT_LOOPBACK_CALLBACK_PATH = "/callback";
 
 const CONNECT_AUTHORIZE_PATH = "/connect";
 
-// Hosted Connect is unconfigured in this local fork.
-export const DEFAULT_HOSTED_APP_URL = "";
+export const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
 
 export const CONNECT_OAUTH_SCOPES = ["openid", "profile", "email", "offline_access"] as const;
 

@@ -6,7 +6,7 @@ Sigma T3 is `drenkas/sigma-t3`, based on `pingdotgg/t3code`. Keep upstream histo
 
 The macOS application is **Sigma T3**, bundle ID `com.drenkas.sigma-t3`. Production and development URL schemes are `sigma-t3` and `sigma-t3-dev`; official T3 links are not accepted as fork callbacks. Backend data defaults to `~/.sigma-t3`, or explicit `SIGMA_T3_HOME` / `--base-dir`. Official `T3CODE_HOME` is ignored. Electron profiles are `sigma-t3` and `sigma-t3-dev`, without automatic legacy profile or credential imports. Worktree development keeps its own gitignored `.t3`; use an explicit isolated home when testing.
 
-Local/manual pairing is the supported connection mode. Hosted Connect has no default endpoint or provisioned OAuth/relay configuration. Do not copy upstream `.env` files, Clerk keys, telemetry, or hosted credentials. Direct provider login retains its existing validation and uses the fork's callback scheme.
+Sigma T3 uses the official T3 Connect (`app.t3.codes`, `relay.t3.codes`, T3's Clerk instance) so the store T3 Code mobile app can reach it; this is the only official T3 service it talks to. The connection is opt-in per environment under Settings → Connections. `sigma:preview-install` bakes the public identifiers from `.env.example`; a build without them has Connect disabled and keeps local/manual pairing. Never add server-side secrets, telemetry, or hosted credentials. Direct provider login retains its existing validation and uses the fork's callback scheme.
 
 ## Fork schema and upstream merges
 
