@@ -39,6 +39,16 @@ else
 fi
 cd "$BUILD_DIR"
 
+# `pnpm run` can put a node without corepack first on PATH, so prefer pnpm itself.
+if command -v pnpm >/dev/null 2>&1; then
+  PNPM=(pnpm)
+elif command -v corepack >/dev/null 2>&1; then
+  PNPM=(corepack pnpm)
+else
+  echo "error: neither pnpm nor corepack is on PATH." >&2
+  exit 1
+fi
+
 BASE_VERSION="$(node -p 'require("./apps/desktop/package.json").version.split("-")[0]')"
 VERSION="${1:-${BASE_VERSION}-preview.$(date -u +%Y%m%d%H%M)}"
 if [[ "$VERSION" != *-preview.* ]]; then
@@ -47,15 +57,15 @@ if [[ "$VERSION" != *-preview.* ]]; then
 fi
 echo "==> Building ${APP_NAME} ${VERSION} from $(git rev-parse --short HEAD)"
 
-corepack pnpm install --frozen-lockfile
-corepack pnpm exec node scripts/update-release-package-versions.ts "$VERSION"
+"${PNPM[@]}" install --frozen-lockfile
+"${PNPM[@]}" exec node scripts/update-release-package-versions.ts "$VERSION"
 
 rm -rf release
 # ZIP rather than DMG: hdiutil conversion is unreliable on recent macOS hosts.
 SIGMA_T3_HOME="$PWD/.scratch/package-home" \
   SIGMA_T3_TELEMETRY_ENABLED=false \
   T3CODE_DESKTOP_SIGNED=false \
-  corepack pnpm exec node scripts/build-desktop-artifact.ts \
+  "${PNPM[@]}" exec node scripts/build-desktop-artifact.ts \
   --platform mac --target zip --arch arm64 --build-version "$VERSION"
 
 ZIP_PATH="release/Sigma-T3-${VERSION}-arm64.zip"
