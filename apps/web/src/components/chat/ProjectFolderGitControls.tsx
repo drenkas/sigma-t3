@@ -265,7 +265,6 @@ function FolderBranchPicker({
       filteredItems={filteredItems}
       value={current}
       query={query}
-      resultsQuery={deferredQuery}
       onQueryChange={setQuery}
       open={open}
       onOpenChange={(next) => {

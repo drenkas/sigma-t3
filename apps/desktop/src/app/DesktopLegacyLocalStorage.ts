@@ -16,7 +16,7 @@ export class DesktopLegacyLocalStorage extends Context.Service<
 export const layer = Layer.succeed(
   DesktopLegacyLocalStorage,
   DesktopLegacyLocalStorage.of({
-    load: (_userDataPath) => Effect.void,
+    load: Effect.fn("DesktopLegacyLocalStorage.load")((_userDataPath) => Effect.void),
     take: Effect.succeedNone,
     complete: Effect.void,
   }),
