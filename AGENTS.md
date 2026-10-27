@@ -215,3 +215,4 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 - Own commit author is `Dmytro Renkas <25162167+drenkas@users.noreply.github.com>`. Do not add `codex/` to branch names. No commit/push/PR/release without the user's applicable authorization.
 - Releases and upstream synchronization are separate. Actions remain disabled until a reviewed CI allowlist exists. Do not repoint upstream publishing gates, publish the `t3` npm package, deploy hosted Connect/mobile/AUR, or reuse official update feeds.
 - Preview packaging is local only; public signing/notarization and publication are separate acceptance gates. See `docs/operations/sigma-fork.md`.
+- Current fork state, open questions, and the daily upstream sync routine are in `docs/HANDOFF.md` (Ukrainian). Read it before starting work and keep it current.
