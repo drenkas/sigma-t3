@@ -36,6 +36,7 @@ import {
   MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
   preflightWindowsDesktopBuild,
+  renderMacEntitlements,
   renderMacPasskeyEntitlements,
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
@@ -581,11 +582,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         false,
         false,
         undefined,
-        undefined,
+        { entitlementsPath: "/stage/entitlements.mac.plist" },
       );
       assert.isNull(config.publish);
       const mac = config.mac as Record<string, unknown>;
       assert.equal(mac.identity, "-");
+      assert.equal(mac.entitlements, "/stage/entitlements.mac.plist");
+      assert.notProperty(mac, "provisioningProfile");
       assert.equal(mac.notarize, false);
       assert.notProperty(mac, "sign");
       assert.notProperty(mac, "hardenedRuntime");
@@ -1450,6 +1453,14 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       rpDomains: ["example.clerk.accounts.dev"],
       provisioningProfilePath: "/tmp/t3code.provisionprofile",
     });
+  });
+
+  it("claims microphone and camera access for macOS builds without passkey signing", () => {
+    const entitlements = renderMacEntitlements();
+    assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
+    assert.match(entitlements, /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/u);
+    assert.match(entitlements, /<key>com\.apple\.security\.device\.camera<\/key>\s*<true\/>/u);
+    assert.notInclude(entitlements, "com.apple.application-identifier");
   });
 
   it("normalizes explicit macOS passkey RP domains and renders required entitlements", () => {

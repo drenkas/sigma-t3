@@ -4,6 +4,8 @@ export interface VoiceRecording {
   /** Resolves with mono 16-bit little-endian PCM at 16 kHz. */
   readonly stop: () => Promise<{ readonly pcm: Uint8Array; readonly sampleRate: number }>;
   readonly cancel: () => void;
+  /** Current input loudness from 0 to 1, for a live level meter. */
+  readonly level: () => number;
 }
 
 /**
@@ -17,8 +19,14 @@ export async function startVoiceRecording(): Promise<VoiceRecording> {
   const recorder = new MediaRecorder(stream);
   const chunks: Blob[] = [];
   recorder.addEventListener("dataavailable", (event) => chunks.push(event.data));
+  const meterContext = new AudioContext();
+  const analyser = meterContext.createAnalyser();
+  analyser.fftSize = 1024;
+  meterContext.createMediaStreamSource(stream).connect(analyser);
+  const frame = new Float32Array(analyser.fftSize);
   const release = () => {
     for (const track of stream.getTracks()) track.stop();
+    if (meterContext.state !== "closed") void meterContext.close();
   };
   recorder.start();
   return {
@@ -37,6 +45,13 @@ export async function startVoiceRecording(): Promise<VoiceRecording> {
     cancel: () => {
       if (recorder.state !== "inactive") recorder.stop();
       release();
+    },
+    level: () => {
+      analyser.getFloatTimeDomainData(frame);
+      let sum = 0;
+      for (const sample of frame) sum += sample * sample;
+      // Speech RMS sits around 0.02-0.2; the square root spreads it across the meter.
+      return Math.min(1, Math.sqrt(Math.sqrt(sum / frame.length) * 4));
     },
   };
 }

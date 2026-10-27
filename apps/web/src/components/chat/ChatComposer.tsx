@@ -3326,7 +3326,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     <ComposerVoiceButton
       environmentId={environmentId}
       onTranscript={(text) => {
-        insertComposerText(text, "cursor", { ensureLeadingBoundary: true });
+        insertComposerTextStable(text, "cursor", { ensureLeadingBoundary: true });
       }}
     />
   ) : null;
