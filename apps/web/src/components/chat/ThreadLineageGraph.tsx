@@ -1,4 +1,7 @@
-import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
+import {
+  formatSubagentDisplayTitle,
+  formatSubagentRoleLabel,
+} from "@t3tools/client-runtime/state/subagent-display";
 import {
   walkThreadRelationships,
   type ThreadRelationshipGraph,
@@ -38,11 +41,17 @@ export function ThreadLineageGraph({
         : row && row.edge.targetThreadId === row.fromThreadId && row.edge.kind !== "transfer"
           ? "parent"
           : (row?.edge.kind ?? "fork");
+    const subagentRole =
+      isSubagent && relationship === "subagent" ? thread?.lineage.role : undefined;
     return {
       id,
-      role: thread ? relationship : "unavailable",
+      role: thread ? (subagentRole ?? relationship) : "unavailable",
       title: thread ? (isSubagent ? formatSubagentDisplayTitle(thread.title) : thread.title) : id,
-      subtitle: id === threadId || thread ? SUBTITLES[relationship] : "Unavailable",
+      subtitle: subagentRole
+        ? formatSubagentRoleLabel(subagentRole)
+        : id === threadId || thread
+          ? SUBTITLES[relationship]
+          : "Unavailable",
       status: thread ? (thread.activityRunStatus ?? thread.status) : "unavailable",
       pendingApproval:
         thread?.pendingRuntimeRequest != null && thread.pendingRuntimeRequest.kind !== "user_input",

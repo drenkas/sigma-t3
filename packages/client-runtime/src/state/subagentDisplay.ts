@@ -47,6 +47,12 @@ export function formatSubagentDisplayTitle(title: string): string {
   return name.replace(/(^|\s)\S/gu, (letter) => letter.toUpperCase()) || displayTitle;
 }
 
+/** A delegated role as the UI names it: "qa_lead" reads "Qa lead", "QA" stays "QA". */
+export function formatSubagentRoleLabel(role: string): string {
+  const label = role.replaceAll("_", " ").replaceAll("-", " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 export function resolveSubagentMetadata(input: {
   readonly model: string | null;
   readonly provider?: Pick<ServerProvider, "driver" | "models"> | null | undefined;

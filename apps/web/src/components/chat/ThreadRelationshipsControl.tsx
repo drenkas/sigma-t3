@@ -11,7 +11,10 @@ import {
   projectedSubagentsToRuntime,
   type RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
+import {
+  formatSubagentDisplayTitle,
+  formatSubagentRoleLabel,
+} from "@t3tools/client-runtime/state/subagent-display";
 import { deriveProviderSubagentStatus } from "@t3tools/client-runtime/state/thread-execution";
 import {
   deriveThreadRelationshipGraph,
@@ -173,10 +176,15 @@ function ThreadLineageGroup(props: {
   );
 }
 
-function relationshipLabel(edge: ThreadRelationshipEdge, currentThreadId: ThreadId) {
+function relationshipLabel(
+  edge: ThreadRelationshipEdge,
+  currentThreadId: ThreadId,
+  childRole: string | undefined,
+) {
   if (edge.kind === "transfer") return "Context transfer";
   if (edge.kind === "subagent") {
-    return edge.sourceThreadId === currentThreadId ? "Subagent" : "Parent agent";
+    if (edge.sourceThreadId !== currentThreadId) return "Parent agent";
+    return childRole ? formatSubagentRoleLabel(childRole) : "Subagent";
   }
   return edge.sourceThreadId === currentThreadId ? "Fork" : "Parent thread";
 }
@@ -482,7 +490,11 @@ export function ThreadRelationshipsPanel(props: {
                 : isSubagent
                   ? BotIcon
                   : GitForkIcon;
-              const relationship = relationshipLabel(edge, props.threadId);
+              const relationship = relationshipLabel(
+                edge,
+                props.threadId,
+                node?.thread?.lineage.role,
+              );
               const projectedAgent =
                 isSubagent && !isParent ? subagentsByThreadId.get(threadId) : undefined;
               const workflowGroup =

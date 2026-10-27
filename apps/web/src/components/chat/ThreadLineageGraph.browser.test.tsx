@@ -10,14 +10,19 @@ import type { OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
 import { render } from "../../../test/render";
 import { ThreadLineageGraph } from "./ThreadLineageGraph";
 
-const shell = (id: string, relationshipToParent: string | null, status = "completed") =>
+const shell = (
+  id: string,
+  relationshipToParent: string | null,
+  status = "completed",
+  role?: string,
+) =>
   ({
     id,
     title: id,
     status,
     activityRunStatus: null,
     pendingRuntimeRequest: null,
-    lineage: { relationshipToParent },
+    lineage: { relationshipToParent, role },
   }) as unknown as OrchestrationV2ThreadShell;
 const edge = (
   source: string,
@@ -35,7 +40,7 @@ const edge = (
 const threads = [
   shell("root", null),
   shell("current", "fork"),
-  shell("helper", "subagent", "running"),
+  shell("helper", "subagent", "running", "reviewer"),
   shell("nested", "subagent"),
 ];
 const graph: ThreadRelationshipGraph = {
@@ -75,6 +80,11 @@ describe("ThreadLineageGraph", () => {
     await expect
       .element(screen.getByRole("button", { name: /^current\. This thread\./ }))
       .toHaveAttribute("aria-pressed", "true");
+
+    await expect
+      .element(screen.getByRole("button", { name: /^helper\. Reviewer\./ }))
+      .toBeVisible();
+    await expect.element(screen.getByText("reviewer", { exact: true })).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /^gone\./ }));
     await userEvent.click(screen.getByRole("button", { name: /^current\./ }));

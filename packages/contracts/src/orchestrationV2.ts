@@ -119,6 +119,8 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
+  // Role a delegated subagent thread was started as (team role or built-in delegate role); absent for forks, roots and provider-native subagents.
+  role: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
 
@@ -3138,6 +3140,7 @@ export const OrchestrationV2Command = Schema.Union([
     parentNodeId: NodeId,
     task: TrimmedNonEmptyString,
     title: Schema.optional(TrimmedNonEmptyString),
+    role: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
     modelSelection: ModelSelection,
     runtimeMode: RuntimeMode,
     interactionMode: ProviderInteractionMode,

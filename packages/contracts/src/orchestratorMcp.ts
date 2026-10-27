@@ -115,16 +115,6 @@ export const OrchestratorMcpInteractionMode = Schema.Union([
 ]);
 export type OrchestratorMcpInteractionMode = typeof OrchestratorMcpInteractionMode.Type;
 
-export const OrchestratorMcpTaskRole = Schema.Literals([
-  "implementation",
-  "research",
-  "review",
-  "design",
-  "test",
-  "general",
-]);
-export type OrchestratorMcpTaskRole = typeof OrchestratorMcpTaskRole.Type;
-
 export const OrchestratorMcpDelegatedTaskStatus = Schema.Literals([
   "queued",
   "running",
@@ -149,7 +139,12 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   task: OrchestratorMcpPrompt,
   target: Schema.optional(OrchestratorMcpTarget),
   title: Schema.optional(OrchestratorMcpTitle),
-  role: Schema.optional(OrchestratorMcpTaskRole),
+  role: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(64)).annotate({
+      description:
+        "Role of the child: a team role name from orchestrator_capabilities teamRoles (e.g. architect, implementer, reviewer, tester) or one of implementation, research, review, design, test, general. Shown in the UI and prefixed to the brief.",
+    }),
+  ),
   isolation: Schema.optional(
     Schema.Literals(["shared", "worktree"]).annotate({
       description:
@@ -333,6 +328,7 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   snoozedUntil: Schema.NullOr(IsoDateTime),
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
+  role: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   itemCount: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -401,6 +397,7 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
+  role: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   runCount: NonNegativeInt,
   itemCount: NonNegativeInt,
   pendingRequestCount: NonNegativeInt,

@@ -117,6 +117,24 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
+it("records the delegated role on the child lineage only when one is given", () => {
+  const input = {
+    parentThread: makeParentThread(),
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Role child",
+    now: childCreatedAt,
+    createdBy: "agent",
+    creationSource: "mcp",
+  } as const;
+
+  assert.equal(makeSubagentChildThread({ ...input, role: "reviewer" }).lineage.role, "reviewer");
+  assert.notProperty(makeSubagentChildThread(input).lineage, "role");
+});
+
 function taskFixture() {
   const projection = emptyProjection({
     type: "thread.created",

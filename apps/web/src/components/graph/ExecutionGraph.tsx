@@ -34,10 +34,16 @@ const PALETTE = {
 const ROLE_COLORS: Record<string, string> = {
   coordinator: PALETTE.violet,
   implementation: PALETTE.blue,
+  implementer: PALETTE.blue,
   research: PALETTE.amber,
+  researcher: PALETTE.amber,
   review: PALETTE.emerald,
+  reviewer: PALETTE.emerald,
   design: PALETTE.pink,
+  designer: PALETTE.pink,
   test: PALETTE.cyan,
+  tester: PALETTE.cyan,
+  architect: PALETTE.orange,
   general: PALETTE.indigo,
   agent: PALETTE.slate,
   current: PALETTE.violet,
@@ -47,9 +53,15 @@ const ROLE_COLORS: Record<string, string> = {
   unavailable: PALETTE.slate,
 };
 const SPARE_COLORS = [PALETTE.orange, PALETTE.lime, PALETTE.rose, PALETTE.indigo, PALETTE.cyan];
-const roleColor = (role: string) =>
-  ROLE_COLORS[role] ??
-  SPARE_COLORS[[...role].reduce((sum, char) => sum + char.charCodeAt(0), 0) % SPARE_COLORS.length]!;
+const roleColor = (rawRole: string) => {
+  const role = rawRole.toLowerCase();
+  return (
+    ROLE_COLORS[role] ??
+    SPARE_COLORS[
+      [...role].reduce((sum, char) => sum + char.charCodeAt(0), 0) % SPARE_COLORS.length
+    ]!
+  );
+};
 
 // Tree links are the structure and stay quiet; the other links say what moved between nodes.
 const LINKS: Record<string, { label: string; color: string | null; dash?: string }> = {
@@ -432,16 +444,18 @@ export function ExecutionGraph({
         aria-label="Legend"
         className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
       >
-        {[...new Set(nodes.map((node) => node.role))].map((role) => (
-          <li key={`role:${role}`} className="flex items-center gap-1.5 capitalize">
-            <span
-              aria-hidden="true"
-              className="size-2 rounded-sm"
-              style={{ backgroundColor: roleColor(role) }}
-            />
-            {pretty(role)}
-          </li>
-        ))}
+        {[...new Map(nodes.map((node) => [node.role.toLowerCase(), node.role])).values()].map(
+          (role) => (
+            <li key={`role:${role}`} className="flex items-center gap-1.5 capitalize">
+              <span
+                aria-hidden="true"
+                className="size-2 rounded-sm"
+                style={{ backgroundColor: roleColor(role) }}
+              />
+              {pretty(role)}
+            </li>
+          ),
+        )}
         {Object.entries(LINKS)
           .filter(([kind]) => edges.some((edge) => edge.kind === kind))
           .map(([kind, link]) => (

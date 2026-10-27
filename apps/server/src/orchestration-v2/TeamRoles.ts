@@ -16,7 +16,7 @@ export function teamRolesNote(roles: TeamRoles): string {
     const description = role.description === undefined ? "" : `: ${role.description}`;
     return `- ${role.role}${description} (providerInstanceId ${role.providerInstanceId}, model ${role.model}${options})`;
   });
-  return `<t3_team_roles>\nThe user's agent team. Delegate each role's work to its model.\n${lines.join("\n")}\n</t3_team_roles>`;
+  return `<t3_team_roles>\nThe user's agent team. Delegate each role's work to its model, passing the role name as delegate_task \`role\`.\n${lines.join("\n")}\n</t3_team_roles>`;
 }
 
 /**

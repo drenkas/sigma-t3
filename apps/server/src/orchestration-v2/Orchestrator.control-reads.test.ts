@@ -880,6 +880,66 @@ it.effect("keeps delegated child pull-request links independent of the parent", 
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("persists the delegated role on the child thread lineage", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const parentThreadId = ThreadId.make("thread:role-parent");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-role-parent"),
+      threadId: parentThreadId,
+      projectId: ProjectId.make("project:role"),
+      title: "Parent",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("start-role-parent"),
+      threadId: parentThreadId,
+      messageId: MessageId.make("message:role-parent"),
+      text: "Delegate two tasks",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const parentRun = (yield* projections.getThreadProjection(parentThreadId)).runs[0]!;
+    const delegate = (id: string, role?: string) =>
+      orchestrator.dispatch({
+        type: "delegated_task.request",
+        commandId: CommandId.make(id),
+        parentThreadId,
+        parentRunId: parentRun.id,
+        parentNodeId: parentRun.rootNodeId!,
+        task: "Do the work",
+        ...(role === undefined ? {} : { role }),
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    yield* delegate("delegate-role-reviewer", "reviewer");
+    yield* delegate("delegate-role-none");
+    const { subagents } = yield* projections.getThreadProjection(parentThreadId);
+    const childOf = (commandId: string) =>
+      projections.getThreadProjection(
+        subagents.find((task) => task.id.endsWith(commandId))!.childThreadId!,
+      );
+    const roleChild = yield* childOf("delegate-role-reviewer");
+    const plainChild = yield* childOf("delegate-role-none");
+    assert.equal(roleChild.thread.lineage.role, "reviewer");
+    assert.notProperty(plainChild.thread.lineage, "role");
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("wakes the parent once when its delegated task asks a question", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

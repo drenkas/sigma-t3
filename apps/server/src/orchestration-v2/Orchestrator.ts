@@ -7142,6 +7142,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           providerInstanceId: command.modelSelection.instanceId,
           modelSelection: command.modelSelection,
           title: taskTitle,
+          ...(command.role === undefined ? {} : { role: command.role }),
           now,
           createdBy: command.createdBy,
           creationSource: command.creationSource,
