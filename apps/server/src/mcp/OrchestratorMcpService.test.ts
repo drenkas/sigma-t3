@@ -1266,7 +1266,7 @@ describe("OrchestratorMcpService provider resolution", () => {
       }),
   );
 
-  it.effect("saves the team, reports it in capabilities, and clears it", () =>
+  it.effect("saves a project team over the default team and follows the default again", () =>
     Effect.gen(function* () {
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
@@ -1296,23 +1296,67 @@ describe("OrchestratorMcpService provider resolution", () => {
           model: "gpt-5.4",
           options: [{ id: "reasoningEffort", value: "high" }],
         };
-        yield* service.setTeamRoles({ roles: [reviewer] });
-        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, [reviewer]);
+        const architect = {
+          role: "architect",
+          providerInstanceId: codexInstanceId,
+          model: "gpt-5.4",
+        };
+        const team = Effect.map(service.capabilities(scope), (result) => ({
+          teamRoles: result.teamRoles,
+          teamRolesSource: result.teamRolesSource,
+          defaultTeamRoles: result.defaultTeamRoles,
+        }));
+
+        yield* service.setTeamRoles(scope, { scope: "default", roles: [reviewer] });
+        assert.deepEqual(yield* team, {
+          teamRoles: [reviewer],
+          teamRolesSource: "default",
+          defaultTeamRoles: [reviewer],
+        });
+
+        yield* service.setTeamRoles(scope, { scope: "project", roles: [architect] });
+        assert.deepEqual(yield* team, {
+          teamRoles: [architect],
+          teamRolesSource: "project",
+          defaultTeamRoles: [reviewer],
+        });
+
+        yield* service.setTeamRoles(scope, { scope: "project", roles: [] });
+        assert.deepEqual(yield* team, {
+          teamRoles: [],
+          teamRolesSource: "project",
+          defaultTeamRoles: [reviewer],
+        });
+
+        yield* service.setTeamRoles(scope, { scope: "project" });
+        assert.deepEqual(yield* team, {
+          teamRoles: [reviewer],
+          teamRolesSource: "default",
+          defaultTeamRoles: [reviewer],
+        });
 
         const unknown = yield* service
-          .setTeamRoles({
+          .setTeamRoles(scope, {
+            scope: "project",
             roles: [{ ...reviewer, providerInstanceId: ProviderInstanceId.make("missing") }],
           })
           .pipe(Effect.flip);
         assert.equal(unknown.code, "invalid_request");
         const duplicate = yield* service
-          .setTeamRoles({ roles: [reviewer, { ...reviewer, role: "Reviewer" }] })
+          .setTeamRoles(scope, {
+            scope: "project",
+            roles: [reviewer, { ...reviewer, role: "Reviewer" }],
+          })
           .pipe(Effect.flip);
         assert.equal(duplicate.code, "invalid_request");
-        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, [reviewer]);
+        const defaultWithoutRoles = yield* service
+          .setTeamRoles(scope, { scope: "default" })
+          .pipe(Effect.flip);
+        assert.equal(defaultWithoutRoles.code, "invalid_request");
+        assert.deepEqual((yield* team).teamRoles, [reviewer]);
 
-        yield* service.setTeamRoles({ roles: [] });
-        assert.deepEqual((yield* service.capabilities(scope)).teamRoles, []);
+        yield* service.setTeamRoles(scope, { scope: "default", roles: [] });
+        assert.deepEqual((yield* team).teamRoles, []);
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
   );

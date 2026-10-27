@@ -1,5 +1,6 @@
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
   latestProviderTurnForAttempt,
@@ -60,7 +61,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
-import { expandRolesCommand, teamRolesNote } from "./TeamRoles.ts";
+import { expandTeamCommand, teamRolesNote } from "./TeamRoles.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -762,9 +763,12 @@ export const layer: Layer.Layer<
         text: message.text,
         records: message.context?.records ?? [],
       });
-      const userText = expandRolesCommand(composerText) ?? composerText;
+      const userText = expandTeamCommand(composerText) ?? composerText;
       const teamRoles = yield* serverSettings.getSettings.pipe(
-        Effect.map((settings) => settings.teamRoles),
+        Effect.map(
+          (settings) =>
+            resolveProjectSettings(settings, projection.thread.projectId).settings.teamRoles,
+        ),
         Effect.orElseSucceed(() => []),
       );
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.

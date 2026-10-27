@@ -265,11 +265,27 @@ Send `/roles` to choose which model handles each role, such as architect,
 implementer, or reviewer. Name the team right after the command, for example
 `/roles architect: opus, reviewer: gpt-5.5 high`, or send `/roles` alone and the
 agent asks which roles you want and suggests models for each one. It saves the
-team once you confirm. `/roles clear` removes it.
+team once you confirm.
 
-Every new conversation starts with the saved team, and the agent delegates each
-role's work to its model. A model you name in a message still wins. The command
-must start the message, and the agent needs T3 Code's tools to save the team.
+The team belongs to the project you send the command from. To set a default
+team for projects that have none, say so, for example
+`/roles default team: reviewer: opus`. `/roles clear` removes the project's
+team; when a default team exists, the agent asks whether the project should use
+no team or follow the default.
+
+To change one role, send `/role` alone and the agent asks which role to change
+and how, or name the change, for example `/role reviewer: gpt-5.5 high`.
+
+The agent does small tasks itself, asks before splitting a medium task or one of
+unclear size, and may split a large one. To make it orchestrate a
+task, send `/orca` followed by the task, or `/orca` alone for the task you have
+been discussing. The agent plans the work, hands each part to a team role, has a
+separate reviewer check the result, and reports back.
+
+Every new conversation starts with its project's team, and the agent can
+delegate a role's work to its model. A model you name in a message still wins.
+The commands must start the message, and the agent needs T3 Code's tools to save
+the team.
 
 ## Goals
 

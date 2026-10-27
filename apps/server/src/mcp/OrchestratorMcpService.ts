@@ -65,10 +65,12 @@ import {
   type ScheduledTaskUpsertInput,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerSettings as ServerSettingsValue,
   ThreadId,
   isOrchestrationV2WorkActive,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import {
@@ -184,6 +186,7 @@ export interface OrchestratorMcpServiceShape {
     input: OrchestratorMcpRequestSecretInput,
   ) => Effect.Effect<OrchestratorMcpRequestSecretResult, OrchestratorMcpFailure>;
   readonly setTeamRoles: (
+    scope: McpInvocationScope,
     input: OrchestratorMcpTeamRolesSetInput,
   ) => Effect.Effect<OrchestratorMcpTeamRolesSetResult, OrchestratorMcpFailure>;
   readonly listThreads: (
@@ -284,6 +287,18 @@ function agentStopReason(reason: string | undefined): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function teamRolesView(
+  settings: ServerSettingsValue,
+  projectId: ProjectId | undefined,
+): OrchestratorMcpTeamRolesSetResult {
+  const resolved = resolveProjectSettings(settings, projectId ?? null);
+  return {
+    teamRoles: resolved.settings.teamRoles,
+    teamRolesSource: resolved.sources.teamRoles === "project" ? "project" : "default",
+    defaultTeamRoles: settings.teamRoles,
+  };
 }
 
 function scheduledTaskWorkspaceStrategy(
@@ -2136,16 +2151,19 @@ const make = Effect.gen(function* () {
           scheduledTasks: true,
           maxBatchThreads: 20,
         },
-        teamRoles: settings.teamRoles,
+        ...teamRolesView(settings, parent?.thread.projectId),
       };
     }),
-    setTeamRoles: Effect.fn("OrchestratorMcpService.setTeamRoles")(function* (input) {
-      const names = input.roles.map((role) => role.role.toLowerCase());
+    setTeamRoles: Effect.fn("OrchestratorMcpService.setTeamRoles")(function* (scope, input) {
+      const { parent } = yield* loadCaller(scope);
+      const projectId = parent?.thread.projectId;
+      const roles = input.roles ?? [];
+      const names = roles.map((role) => role.role.toLowerCase());
       if (new Set(names).size !== names.length) {
         return yield* failure("invalid_request", "Each role needs its own name.");
       }
       const providers = yield* loadProviders;
-      const unknown = input.roles.filter(
+      const unknown = roles.filter(
         (role) => !providers.some((provider) => provider.instanceId === role.providerInstanceId),
       );
       if (unknown.length > 0) {
@@ -2154,10 +2172,37 @@ const make = Effect.gen(function* () {
           `Unknown provider instance for ${unknown.map((role) => role.role).join(", ")}. Use a providerInstanceId from orchestrator_capabilities.`,
         );
       }
+      const saveFailed = () => failure("orchestration_error", "Unable to save the team.");
+      if (input.scope === "default") {
+        if (input.roles === undefined) {
+          return yield* failure(
+            "invalid_request",
+            "Pass roles for the default team; [] clears it. Only a project team can follow the default.",
+          );
+        }
+        const settings = yield* serverSettings
+          .updateSettings({ teamRoles: input.roles })
+          .pipe(Effect.mapError(saveFailed));
+        return teamRolesView(settings, projectId);
+      }
+      if (projectId === undefined) {
+        return yield* failure(
+          "target_required",
+          "A project team is saved from a T3 thread; outside one, use scope default.",
+        );
+      }
+      const current = yield* serverSettings.getSettings.pipe(Effect.mapError(saveFailed));
+      // The patch replaces the project's whole override set, so keep its other overrides.
+      const { teamRoles: _replaced, ...kept } = current.projectSettingsOverrides[projectId] ?? {};
+      const next = input.roles === undefined ? kept : { ...kept, teamRoles: input.roles };
       const settings = yield* serverSettings
-        .updateSettings({ teamRoles: input.roles })
-        .pipe(Effect.mapError(() => failure("orchestration_error", "Unable to save the team.")));
-      return { teamRoles: settings.teamRoles };
+        .updateSettings({
+          projectSettingsOverrides: {
+            [projectId]: Object.keys(next).length === 0 ? null : next,
+          },
+        })
+        .pipe(Effect.mapError(saveFailed));
+      return teamRolesView(settings, projectId);
     }),
     delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
       const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");

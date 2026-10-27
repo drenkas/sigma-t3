@@ -953,6 +953,23 @@ export const WorktreeCleanup = Schema.NullOr(
 );
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
+/**
+ * One role of the user's agent team, saved with the `/roles` command. A
+ * conversation starts with its project's team, or the default team when the
+ * project has none, so the agent delegates each role's work to its model.
+ */
+export const TeamRole = Schema.Struct({
+  role: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  options: Schema.optionalKey(Schema.Array(ProviderOptionSelection)),
+  description: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
+});
+export type TeamRole = typeof TeamRole.Type;
+
+export const TeamRoles = Schema.Array(TeamRole).check(Schema.isMaxLength(20));
+export type TeamRoles = typeof TeamRoles.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "worktreeCleanup",
   "defaultModelSelection",
@@ -980,6 +997,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "sidebarAutoSettleKeepPullRequests",
   "continueThreadsAfterServerUpdate",
   "responseStreamingMode",
+  "teamRoles",
 ] as const;
 export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTING_KEYS)[number];
 
@@ -1017,6 +1035,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
+  teamRoles: Schema.optionalKey(TeamRoles),
   providerInstances: Schema.optionalKey(
     Schema.Record(ProviderInstanceId, ProjectProviderInstanceOverride),
   ),
@@ -1100,23 +1119,6 @@ export const StorageCleanupSettings = Schema.Struct({
   logsAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
-
-/**
- * One role of the user's agent team, saved with the `/roles` command. Every
- * conversation starts with the team so the agent delegates each role's work to
- * the model the user picked for it.
- */
-export const TeamRole = Schema.Struct({
-  role: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
-  providerInstanceId: ProviderInstanceId,
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(Schema.Array(ProviderOptionSelection)),
-  description: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
-});
-export type TeamRole = typeof TeamRole.Type;
-
-export const TeamRoles = Schema.Array(TeamRole).check(Schema.isMaxLength(20));
-export type TeamRoles = typeof TeamRoles.Type;
 
 export const ServerSettings = Schema.Struct({
   // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.

@@ -1,7 +1,7 @@
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { expandRolesCommand, teamRolesNote } from "./TeamRoles.ts";
+import { expandTeamCommand, teamRolesNote } from "./TeamRoles.ts";
 
 describe("teamRolesNote", () => {
   it("is empty without a team", () => {
@@ -26,24 +26,55 @@ describe("teamRolesNote", () => {
   });
 });
 
-describe("expandRolesCommand", () => {
+describe("expandTeamCommand", () => {
   it("leaves other messages alone", () => {
-    expect(expandRolesCommand("fix the roles page")).toBeNull();
-    expect(expandRolesCommand("/rolesx")).toBeNull();
-    expect(expandRolesCommand("please run /roles")).toBeNull();
+    expect(expandTeamCommand("fix the roles page")).toBeNull();
+    expect(expandTeamCommand("/rolesx")).toBeNull();
+    expect(expandTeamCommand("please run /roles")).toBeNull();
   });
 
   it("interviews the user when the command has no team", () => {
-    expect(expandRolesCommand(" /roles ")).toContain("interview them");
+    expect(expandTeamCommand(" /roles ")).toContain("interview them");
   });
 
   it("passes an inline team through", () => {
-    const expanded = expandRolesCommand("/Roles architect: opus\nreviewer: gpt-5.5 high");
+    const expanded = expandTeamCommand("/Roles architect: opus\nreviewer: gpt-5.5 high");
     expect(expanded).toContain("<roles>\narchitect: opus\nreviewer: gpt-5.5 high\n</roles>");
     expect(expanded).not.toContain("interview them");
   });
 
-  it("clears the team", () => {
-    expect(expandRolesCommand("/roles clear")).toContain("Save an empty team");
+  it("clears this project's team", () => {
+    expect(expandTeamCommand("/roles clear")).toContain("to clear this project's team");
+  });
+
+  it("interviews the user about one role", () => {
+    const expanded = expandTeamCommand("/role");
+    expect(expanded).toContain("ask which role to change");
+    expect(expanded).toContain("tool for asking the user");
+    expect(expandTeamCommand("/rolex")).toBeNull();
+  });
+
+  it("passes a change to one role through", () => {
+    const expanded = expandTeamCommand("/Role reviewer: gpt-5.5 high");
+    expect(expanded).toContain("<role>\nreviewer: gpt-5.5 high\n</role>");
+    expect(expanded).not.toContain("ask which role to change");
+    expect(expanded).not.toContain("<roles>");
+  });
+
+  it("expands /orca with its task", () => {
+    const expanded = expandTeamCommand("/orca Ship the release");
+    expect(expanded).toContain("<t3_orca_command>");
+    expect(expanded).toContain("<task>\nShip the release\n</task>");
+  });
+
+  it("expands /orca alone to the task under discussion", () => {
+    const expanded = expandTeamCommand("/orca");
+    expect(expanded).toContain("The task is the one this conversation has been discussing");
+    expect(expanded).not.toContain("<task>");
+  });
+
+  it("leaves lookalikes of /orca alone", () => {
+    expect(expandTeamCommand("/orcax")).toBeNull();
+    expect(expandTeamCommand("please /orca")).toBeNull();
   });
 });
