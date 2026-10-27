@@ -65,7 +65,7 @@ const telemetryDestination = Config.all({
   posthogHost: Config.String("SIGMA_T3_POSTHOG_HOST").pipe(Config.withDefault("")),
 });
 
-export const telemetryEnabled = Config.all({
+const telemetryEnabled = Config.all({
   requested: Config.Boolean("SIGMA_T3_TELEMETRY_ENABLED").pipe(Config.withDefault(false)),
   destination: telemetryDestination,
 }).pipe(
