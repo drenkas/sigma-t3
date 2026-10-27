@@ -134,14 +134,32 @@ export function buildComposerSlashCommandItems(input: {
   // Providers expand commands only at the start of a message. T3 commands
   // change local state and do not have this restriction.
   if (!input.atMessageStart) return items;
-  // The server expands `/roles` only when it opens the message.
+  // The server expands `/roles`, `/role`, and `/orca` only when they open the message.
   if ("roles".includes(query)) {
     items.push({
       id: "cmd:roles",
       type: "slash-command",
       command: "roles",
       label: "/roles",
-      description: "Set up your agent team's models",
+      description: "Set up this project's agent team",
+    });
+  }
+  if ("role".includes(query)) {
+    items.push({
+      id: "cmd:role",
+      type: "slash-command",
+      command: "role",
+      label: "/role",
+      description: "Change one role of this project's agent team",
+    });
+  }
+  if ("orca".includes(query)) {
+    items.push({
+      id: "cmd:orca",
+      type: "slash-command",
+      command: "orca",
+      label: "/orca",
+      description: "Run a task in orchestration mode with your agent team",
     });
   }
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {

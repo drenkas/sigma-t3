@@ -547,6 +547,22 @@ export const OrchestratorMcpProviderCapability = Schema.Struct({
 });
 export type OrchestratorMcpProviderCapability = typeof OrchestratorMcpProviderCapability.Type;
 
+const OrchestratorMcpTeamRolesScope = Schema.Literals(["project", "default"]);
+
+const OrchestratorMcpTeamRolesView = Schema.Struct({
+  teamRoles: TeamRoles.annotate({
+    description:
+      "The team this thread's project uses: the model for each role. When you split a task, delegate a role's part to its model.",
+  }),
+  teamRolesSource: OrchestratorMcpTeamRolesScope.annotate({
+    description:
+      "project when the project has its own team, default when it uses the default team.",
+  }),
+  defaultTeamRoles: TeamRoles.annotate({
+    description: "The default team, for projects without their own.",
+  }),
+});
+
 export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   inheritedProviderInstanceId: Schema.NullOr(ProviderInstanceId),
@@ -565,24 +581,25 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
     scheduledTasks: Schema.Boolean,
     maxBatchThreads: Schema.Number,
   }),
-  teamRoles: TeamRoles.annotate({
-    description:
-      "The user's saved team: the model for each role. Delegate a role's work to its model.",
-  }),
+  ...OrchestratorMcpTeamRolesView.fields,
 });
 export type OrchestratorMcpCapabilitiesResult = typeof OrchestratorMcpCapabilitiesResult.Type;
 
 export const OrchestratorMcpTeamRolesSetInput = Schema.Struct({
-  roles: TeamRoles.annotate({
+  scope: OrchestratorMcpTeamRolesScope.annotate({
     description:
-      "The whole team, replacing the saved one; [] clears it. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. description says what the role does, in a sentence.",
+      "project saves the team of this thread's project. default saves the team for projects without their own; use it only when the user asks for the default team.",
   }),
+  roles: Schema.optional(
+    TeamRoles.annotate({
+      description:
+        "The whole team, replacing the saved one; [] means no team. Omit it, for project only, to remove the project's own team so it follows the default team. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. description says what the role does, in a sentence.",
+    }),
+  ),
 });
 export type OrchestratorMcpTeamRolesSetInput = typeof OrchestratorMcpTeamRolesSetInput.Type;
 
-export const OrchestratorMcpTeamRolesSetResult = Schema.Struct({
-  teamRoles: TeamRoles,
-});
+export const OrchestratorMcpTeamRolesSetResult = OrchestratorMcpTeamRolesView;
 export type OrchestratorMcpTeamRolesSetResult = typeof OrchestratorMcpTeamRolesSetResult.Type;
 
 export const OrchestratorMcpScheduleTaskInput = Schema.Struct({

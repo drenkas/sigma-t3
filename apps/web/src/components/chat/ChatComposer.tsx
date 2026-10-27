@@ -1892,8 +1892,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
-      if (item.command === "roles") {
-        const replacement = "/roles ";
+      if (item.command === "roles" || item.command === "role" || item.command === "orca") {
+        const replacement = `/${item.command} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,

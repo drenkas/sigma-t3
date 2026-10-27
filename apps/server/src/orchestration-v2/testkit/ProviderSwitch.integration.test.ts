@@ -422,103 +422,128 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
 ) {}
 
 describe("orchestration v2 provider switching", () => {
-  it.live("opens a conversation with the saved team and expands /roles for the agent", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const cwd = yield* checkpointWorkspace("team-roles");
-        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
-        const registry = ProviderAdapterRegistry.layerFromAdapters([
-          makeTestAdapter({
-            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
-            driver: CLAUDE_DRIVER,
-            capabilities: ClaudeProviderCapabilitiesV2,
-            modelSelection: CLAUDE_MODEL_SELECTION,
-            responseByRunOrdinal: {},
-            capturedTurns,
-          }),
-        ]);
-        yield* Effect.gen(function* () {
-          const orchestrator = yield* Orchestrator.OrchestratorV2;
-          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-          const run = Effect.fn("run")(function* (ordinal: number, text: string) {
+  it.live(
+    "opens a conversation with its project's team and expands /roles and /orca for the agent",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cwd = yield* checkpointWorkspace("team-roles");
+          const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+          const registry = ProviderAdapterRegistry.layerFromAdapters([
+            makeTestAdapter({
+              instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+              driver: CLAUDE_DRIVER,
+              capabilities: ClaudeProviderCapabilitiesV2,
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              responseByRunOrdinal: {},
+              capturedTurns,
+            }),
+          ]);
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            const run = Effect.fn("run")(function* (ordinal: number, text: string) {
+              yield* orchestrator.dispatch({
+                type: "message.dispatch",
+                commandId: CommandId.make(`team-roles:${ordinal}`),
+                threadId,
+                messageId: MessageId.make(`team-roles:${ordinal}`),
+                createdBy: "user",
+                creationSource: "web",
+                text,
+                attachments: [],
+                modelSelection: CLAUDE_MODEL_SELECTION,
+                dispatchMode: { type: "start_immediately" },
+              });
+              yield* orchestrator.streamStoredEvents.pipe(
+                Stream.filter(
+                  ({ event }) =>
+                    event.type === "run.updated" &&
+                    event.payload.ordinal === ordinal &&
+                    event.payload.status === "completed",
+                ),
+                Stream.runHead,
+              );
+              yield* worker.drain();
+              return (yield* Ref.get(capturedTurns)).at(-1)!.text;
+            });
             yield* orchestrator.dispatch({
-              type: "message.dispatch",
-              commandId: CommandId.make(`team-roles:${ordinal}`),
+              type: "thread.create",
+              commandId: CommandId.make("team-roles:create"),
               threadId,
-              messageId: MessageId.make(`team-roles:${ordinal}`),
+              projectId,
               createdBy: "user",
               creationSource: "web",
-              text,
-              attachments: [],
+              title: "Team roles",
               modelSelection: CLAUDE_MODEL_SELECTION,
-              dispatchMode: { type: "start_immediately" },
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
             });
-            yield* orchestrator.streamStoredEvents.pipe(
-              Stream.filter(
-                ({ event }) =>
-                  event.type === "run.updated" &&
-                  event.payload.ordinal === ordinal &&
-                  event.payload.status === "completed",
-              ),
-              Stream.runHead,
+
+            const first = yield* run(1, "Plan the release");
+            assert.include(first, "<t3_team_roles>");
+            assert.include(
+              first,
+              "- architect (providerInstanceId claudeAgent, model claude-opus-4-8)",
             );
-            yield* worker.drain();
-            return (yield* Ref.get(capturedTurns)).at(-1)!.text;
-          });
-          yield* orchestrator.dispatch({
-            type: "thread.create",
-            commandId: CommandId.make("team-roles:create"),
-            threadId,
-            projectId,
-            createdBy: "user",
-            creationSource: "web",
-            title: "Team roles",
-            modelSelection: CLAUDE_MODEL_SELECTION,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-          });
+            assert.notInclude(first, "- reviewer");
+            assert.include(first, "Plan the release");
 
-          const first = yield* run(1, "Plan the release");
-          assert.include(first, "<t3_team_roles>");
-          assert.include(first, "- reviewer (providerInstanceId codex, model gpt-5.5)");
-          assert.include(first, "Plan the release");
+            const second = yield* run(2, "/roles reviewer: opus");
+            assert.notInclude(second, "<t3_team_roles>");
+            assert.include(second, "<t3_roles_command>");
+            assert.include(second, "<roles>\nreviewer: opus\n</roles>");
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(threadId)).messages.at(-1)?.text,
+              "/roles reviewer: opus",
+            );
 
-          const second = yield* run(2, "/roles reviewer: opus");
-          assert.notInclude(second, "<t3_team_roles>");
-          assert.include(second, "<t3_roles_command>");
-          assert.include(second, "<roles>\nreviewer: opus\n</roles>");
-          assert.equal(
-            (yield* orchestrator.getThreadProjection(threadId)).messages.at(-1)?.text,
-            "/roles reviewer: opus",
-          );
-        }).pipe(
-          Effect.provide(
-            ProviderReplayHarness.layerWithRegistry(
-              {
-                name: "team-roles",
-                runtimePolicyOverride: {
-                  cwd,
-                  approvalPolicy: "never",
-                  sandboxPolicy: { type: "readOnly" },
-                },
-              },
-              registry,
-              {
-                teamRoles: [
-                  {
-                    role: "reviewer",
-                    providerInstanceId: ProviderInstanceId.make("codex"),
-                    model: "gpt-5.5",
+            const third = yield* run(3, "/orca Ship the release");
+            assert.include(third, "<t3_orca_command>");
+            assert.include(third, "<task>\nShip the release\n</task>");
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(threadId)).messages.at(-1)?.text,
+              "/orca Ship the release",
+            );
+          }).pipe(
+            Effect.provide(
+              ProviderReplayHarness.layerWithRegistry(
+                {
+                  name: "team-roles",
+                  runtimePolicyOverride: {
+                    cwd,
+                    approvalPolicy: "never",
+                    sandboxPolicy: { type: "readOnly" },
                   },
-                ],
-              },
+                },
+                registry,
+                {
+                  teamRoles: [
+                    {
+                      role: "reviewer",
+                      providerInstanceId: ProviderInstanceId.make("codex"),
+                      model: "gpt-5.5",
+                    },
+                  ],
+                  projectSettingsOverrides: {
+                    [projectId]: {
+                      teamRoles: [
+                        {
+                          role: "architect",
+                          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+                          model: "claude-opus-4-8",
+                        },
+                      ],
+                    },
+                  },
+                },
+              ),
             ),
-          ),
-        );
-      }),
-    ),
+          );
+        }),
+      ),
   );
 
   it.live.each([

@@ -785,6 +785,36 @@ it.effect(
     ),
 );
 
+it.effect("expands a built-in team command steered into a running turn", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { started, steered, layer, startFirstTurn } =
+        yield* nextTurnSelectionHarness("steering-team-command");
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* startFirstTurn;
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("steer-orca"),
+          threadId,
+          messageId: MessageId.make("message:steer-orca"),
+          text: "/orca Ship the release",
+          attachments: [],
+          modelSelection: runSelection,
+          dispatchMode: { type: "steer_active", targetRunId: started[0]!.runId },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* worker.drain();
+        assert.lengthOf(steered, 1);
+        assert.include(steered[0], "<t3_orca_command>");
+        assert.include(steered[0], "<task>\nShip the release\n</task>");
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
 it.effect("starts a steer that missed the turn on the saved next-turn selection", () =>
   Effect.scoped(
     Effect.gen(function* () {
