@@ -163,7 +163,7 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   role: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(64)).annotate({
       description:
-        "Role of the child: a team role name from orchestrator_capabilities teamRoles (e.g. architect, implementer, reviewer, tester) or one of implementation, research, review, design, test, general. Shown in the UI and prefixed to the brief.",
+        "Role of the child: a team role name from orchestrator_capabilities teamRoles (e.g. architect, researcher, implementer, reviewer, tester) or one of implementation, research, review, design, test, general. Shown in the UI and prefixed to the brief.",
     }),
   ),
   isolation: Schema.optional(

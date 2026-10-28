@@ -262,7 +262,7 @@ Claude instances can also compact idle threads for you. See
 ## Agent team
 
 Send `/roles` to choose which model handles each role, such as architect,
-implementer, or reviewer. Name the team right after the command, for example
+researcher, implementer, or reviewer. Name the team right after the command, for example
 `/roles architect: opus, reviewer: gpt-5.5 high`, or send `/roles` alone and the
 agent asks which roles you want and suggests models for each one. It saves the
 team once you confirm.

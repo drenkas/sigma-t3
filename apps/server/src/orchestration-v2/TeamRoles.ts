@@ -62,7 +62,7 @@ ${args}
 Apply it, matching a named model to a provider instance and model from the catalog. Ask only about what is missing or ambiguous, such as a role the team does not have yet. Then show the whole team with the change and save it.`
       : args === ""
         ? `The user ran /roles with nothing after it, so interview them:
-1. Show the team this project uses, saying whether it is the project's own or the default, and ask which roles they want, suggesting a few that fit how they work, such as architect, implementer, reviewer, and tester.
+1. Show the team this project uses, saying whether it is the project's own or the default, and ask which roles they want, suggesting a few that fit how they work, such as architect, researcher (reads the codebase and searches the web), implementer, reviewer, and tester.
 2. Then go through the roles one at a time. For each, suggest two or three models from the catalog that suit the role, mark the one you recommend and why in a few words, and wait for the user's answer before moving to the next role.
 3. After the last role, show the whole team and save it once the user confirms.`
         : /^(clear|reset|remove|none)$/i.test(args)
