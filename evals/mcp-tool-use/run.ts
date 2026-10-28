@@ -13,7 +13,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ComposerContextRecord,
-  OrchestratorMcpTaskRole,
+  OrchestratorMcpDelegateTaskInput,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -178,7 +178,7 @@ export const McpToolUseCase = Schema.Struct({
     /** The Linked environments beta is on, so T3 lists its link tools. */
     linkedEnvironments: Schema.optional(Schema.Boolean),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
-    delegateRole: Schema.optional(OrchestratorMcpTaskRole),
+    delegateRole: OrchestratorMcpDelegateTaskInput.fields.role,
     context: Schema.optional(Schema.String),
     priorTurns: Schema.optional(
       Schema.Array(
