@@ -56,7 +56,7 @@ Sigma T3 (`drenkas/sigma-t3`) це форк T3 Code (`pingdotgg/t3code`). Ми �
 
 Дрібниці:
 
-- Нове лого: суцільна Σ (на проді чорна на акцентному `#7C8CFF`), без графа з вузлами. iOS, web і Windows іконки перегенеровано на Mac. Три `*-macos-1024.png` ще старі: їх треба вручну експортувати з Icon Composer (macOS pre-Tahoe, див. `assets/README.md`), бо `ictool` не дає safe area.
+- Нове лого: суцільна Σ (на проді чорна на акцентному `#7C8CFF`), без графа з вузлами. Усі іконки перегенеровано на Mac. `*-macos-1024.png` зроблено з iOS-рендеру 824px із відступом до 1024px, бо `ictool` не має експорту pre-Tahoe. Якщо потрібна нативна тінь, експортуйте вручну, як описано в `assets/README.md`.
 - Гілку `claude/project-thread-bv1kxd` (дубль фіксу ліцензій) можна видалити.
 - На Mac у `~/Documents/Projects/sigma-t3` є `git stash` «local pnpm-lock before pull 2026-10-26». Локальний pnpm v12 переписує `pnpm-lock.yaml`; ці зміни не комітимо (`git checkout pnpm-lock.yaml`).
 - Відомі падіння, які є й на `main` або в чистому upstream і не блокують: knip на `AnalyticsService`, тест `CodexAuthCallback`, тест `PdfViewer` (падає і в upstream), кілька помилок typecheck у mobile.
