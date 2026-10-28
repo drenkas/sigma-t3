@@ -41,7 +41,7 @@ vi.mock(import("~/state/query"), async (original) => ({
     refresh: () => {},
   })) as never,
 }));
-vi.mock(import("~/lib/sourceControlActions"), async (original) => {
+vi.mock(import("~/state/sourceControlActions"), async (original) => {
   const success = (value: unknown) => ({ _tag: "Success", value });
   return {
     ...(await original()),

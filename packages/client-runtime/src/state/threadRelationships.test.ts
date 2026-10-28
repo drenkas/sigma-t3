@@ -7,6 +7,7 @@ import {
   immediateThreadRelationships,
   orderWebThreadLineageRows,
   resolveMergeBackTargetThreadId,
+  walkThreadRelationships,
   threadRelationshipRowStatus,
 } from "./threadRelationships.ts";
 
@@ -110,6 +111,12 @@ describe("thread relationships", () => {
     });
 
     expect(graph.nodes.get(missing)?.missing).toBe(true);
+    expect(
+      walkThreadRelationships(graph, root).map(({ threadId, depth }) => [threadId, depth]),
+    ).toEqual([
+      [child, 1],
+      [missing, 2],
+    ]);
     expect(immediateThreadRelationships(graph, root).map(({ threadId }) => threadId)).toEqual([
       child,
     ]);

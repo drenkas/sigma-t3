@@ -20,7 +20,7 @@ import {
   useSourceControlActionRunning,
   useVcsInitAction,
   useVcsPullAction,
-} from "../../lib/sourceControlActions";
+} from "../../state/sourceControlActions";
 import { randomUUID } from "../../lib/utils";
 import { usePaginatedBranches } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
