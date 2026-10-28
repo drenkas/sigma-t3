@@ -6,7 +6,7 @@ Sigma T3 is `drenkas/sigma-t3`, based on `pingdotgg/t3code`. Keep upstream histo
 
 The macOS application is **Sigma T3**, bundle ID `com.drenkas.sigma-t3`. Production and development URL schemes are `sigma-t3` and `sigma-t3-dev`; official T3 links are not accepted as fork callbacks. Backend data defaults to `~/.sigma-t3`, or explicit `SIGMA_T3_HOME` / `--base-dir`. Official `T3CODE_HOME` is ignored. Electron profiles are `sigma-t3` and `sigma-t3-dev`, without automatic legacy profile or credential imports. Worktree development keeps its own gitignored `.t3`; use an explicit isolated home when testing.
 
-Local/manual pairing is the supported connection mode. Hosted Connect has no default endpoint or provisioned OAuth/relay configuration. Do not copy upstream `.env` files, Clerk keys, telemetry, or hosted credentials. Direct provider login retains its existing validation and uses the fork's callback scheme.
+T3 Connect uses upstream's hosted deployment. Its public identifiers come from the repository-root `.env` (see [T3 Connect setup](connect-setup.md#public-application-configuration)) and are embedded at build time. Direct provider login retains its existing validation and uses the fork's callback scheme.
 
 ## Fork schema and upstream merges
 
@@ -14,7 +14,7 @@ Fork tables migrate through `apps/server/src/persistence/SigmaMigrations.ts`, re
 
 ## Build an isolated macOS arm64 preview
 
-For daily use, `pnpm run sigma:preview-install [version]` runs the steps below in a separate `../sigma-t3-build` worktree from `origin/main`, builds the ZIP, verifies the signature, and replaces `/Applications/Sigma T3.app` (the previous bundle goes to the Trash). It refuses to run while Sigma T3 is open.
+For daily use, `pnpm run sigma:preview-install [version]` runs the steps below in a separate `../sigma-t3-build` worktree from `origin/main`, copies this checkout's `.env` and `.env.local` into it, builds the ZIP, verifies the signature, and replaces `/Applications/Sigma T3.app` (the previous bundle goes to the Trash). It refuses to run while Sigma T3 is open.
 
 From a clean owned checkout with locked dependencies:
 
@@ -35,6 +35,8 @@ SIGMA_T3_HOME="$PWD/.scratch/package-home" SIGMA_T3_TELEMETRY_ENABLED=false T3CO
 `--keep-stage` preserves the staged `.app` for inspection. A ZIP success does not establish a working DMG.
 
 A preview with `T3CODE_DESKTOP_SIGNED=false` uses electron-builder's explicit ad-hoc signing (`mac.identity: "-"`) and skips notarization. This replaces Electron's inherited signature after renaming the bundle; hardened runtime remains enabled with electron-builder's existing local Electron entitlements. Signed builds retain their release signing and notarization path. Verify the resulting bundle with `codesign --verify --deep --strict`.
+
+macOS keys privacy permissions (microphone, accessibility, screen recording, and the rest of TCC) on the app's designated requirement. For an ad-hoc signature that is the per-build cdhash, so every preview rebuild starts with no permissions. Set `SIGMA_PREVIEW_SIGNING_IDENTITY` (or pass `--preview-signing-identity`) to a code-signing identity from `security find-identity -v -p codesigning`, such as an Apple Development certificate or a self-signed one made in Keychain Access, and the preview's requirement becomes the certificate plus bundle identifier, which is stable across rebuilds. Grant permissions once more after switching; stale ad-hoc entries can be cleared with `tccutil reset All com.drenkas.sigma-t3`.
 
 Ad-hoc signing provides local bundle integrity, not Developer ID trust or notarization. Archive creation and signature verification do not establish launch readiness. Before distribution, obtain the appropriate Developer ID credentials, build the verified revision, inspect its bundle identity/profile paths, and test installing beside T3 and updating between two own signed builds. Do not launch or install artifacts without the applicable user authorization.
 

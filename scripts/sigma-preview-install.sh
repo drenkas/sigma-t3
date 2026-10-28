@@ -5,8 +5,10 @@
 # Usage: scripts/sigma-preview-install.sh [version]
 #   version  defaults to <desktop version>-preview.<UTC timestamp>
 #
-# Env: SIGMA_PREVIEW_BUILD_DIR  build worktree (default: ../sigma-t3-build next to this checkout)
-#      SIGMA_PREVIEW_REF        ref to build (default: origin/main)
+# Env: SIGMA_PREVIEW_BUILD_DIR         build worktree (default: ../sigma-t3-build next to this checkout)
+#      SIGMA_PREVIEW_REF               ref to build (default: origin/main)
+#      SIGMA_PREVIEW_SIGNING_IDENTITY  keychain code-signing identity, e.g. "Apple Development: you@example.com (TEAMID)".
+#                                      Default is ad-hoc, which makes macOS forget the app's permissions on every rebuild.
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
@@ -37,6 +39,15 @@ else
   echo "==> Creating build worktree ${BUILD_DIR} at ${REF}"
   git -C "$REPO_ROOT" worktree add --detach "$BUILD_DIR" "$REF"
 fi
+
+# Builds embed T3 Connect's public config from these files.
+for env_file in .env .env.local; do
+  if [[ -f "$REPO_ROOT/$env_file" ]]; then
+    cp "$REPO_ROOT/$env_file" "$BUILD_DIR/$env_file"
+  else
+    rm -f "$BUILD_DIR/$env_file"
+  fi
+done
 cd "$BUILD_DIR"
 
 # `pnpm run` can put a node without corepack first on PATH, so prefer pnpm itself.
@@ -56,6 +67,11 @@ if [[ "$VERSION" != *-preview.* ]]; then
   exit 1
 fi
 echo "==> Building ${APP_NAME} ${VERSION} from $(git rev-parse --short HEAD)"
+if [[ -n "${SIGMA_PREVIEW_SIGNING_IDENTITY:-}" ]]; then
+  echo "    Signing with ${SIGMA_PREVIEW_SIGNING_IDENTITY}"
+else
+  echo "    Signing ad-hoc; set SIGMA_PREVIEW_SIGNING_IDENTITY to keep macOS permissions across rebuilds."
+fi
 
 "${PNPM[@]}" install --frozen-lockfile
 "${PNPM[@]}" exec node scripts/update-release-package-versions.ts "$VERSION"

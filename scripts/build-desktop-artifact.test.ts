@@ -615,6 +615,23 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(mac, "sign");
       assert.notProperty(mac, "hardenedRuntime");
 
+      const stable = yield* createBuildConfig(
+        "mac",
+        "zip",
+        "0.1.0-preview.1",
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "arm64",
+        "Apple Development: dev@example.com (TEAMID1234)",
+      );
+      const stableMac = stable.mac as Record<string, unknown>;
+      assert.equal(stableMac.identity, "Apple Development: dev@example.com (TEAMID1234)");
+      assert.equal(stableMac.notarize, false);
+      assert.notProperty(stableMac, "sign");
+
       for (const [version, signed] of [
         ["0.1.0", false],
         ["0.1.0", true],
@@ -628,6 +645,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           false,
           undefined,
           undefined,
+          false,
+          "arm64",
+          "Apple Development: dev@example.com (TEAMID1234)",
         );
         const otherMac = other.mac as Record<string, unknown>;
         assert.notProperty(otherMac, "identity");
@@ -1804,6 +1824,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             mockUpdates: Option.none(),
             mockUpdateServerPort: Option.none(),
             wslRuntime: Option.none(),
+            previewSigningIdentity: Option.none(),
           }),
         );
 
@@ -1828,6 +1849,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         mockUpdates: Option.some(false),
         mockUpdateServerPort: Option.none(),
         wslRuntime: Option.none(),
+        previewSigningIdentity: Option.none(),
       }).pipe(
         Effect.provide(
           ConfigProvider.layer(

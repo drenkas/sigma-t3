@@ -188,6 +188,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslRuntime: Option.Option<string>;
+  readonly previewSigningIdentity: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -950,6 +951,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslRuntime: string | undefined;
+  readonly previewSigningIdentity: string | undefined;
 }
 
 interface StagePackageJson {
@@ -1678,6 +1680,7 @@ const BuildEnvConfig = Config.all({
   mockUpdates: Config.Boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.String("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
   wslRuntime: Config.String("T3CODE_DESKTOP_WSL_RUNTIME").pipe(Config.option),
+  previewSigningIdentity: Config.String("SIGMA_PREVIEW_SIGNING_IDENTITY").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1770,6 +1773,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
 
   const wslRuntime =
     Option.getOrUndefined(input.wslRuntime) ?? Option.getOrUndefined(env.wslRuntime);
+  const previewSigningIdentity =
+    Option.getOrUndefined(input.previewSigningIdentity) ??
+    Option.getOrUndefined(env.previewSigningIdentity);
 
   return {
     platform,
@@ -1784,6 +1790,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslRuntime,
+    previewSigningIdentity,
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2789,6 +2796,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     | undefined,
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
+  previewSigningIdentity?: string,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -2877,7 +2885,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       // Local previews need a fresh signature after Electron's bundle is renamed.
-      ...(!signed && isDesktopPreviewVersion(version) ? { identity: "-", notarize: false } : {}),
+      // macOS keys TCC grants on the designated requirement, and an ad-hoc one is
+      // the per-build cdhash, so a stable local certificate keeps them across rebuilds.
+      ...(!signed && isDesktopPreviewVersion(version)
+        ? { identity: previewSigningIdentity ?? "-", notarize: false }
+        : {}),
       ...(macSigning ? { entitlements: macSigning.entitlementsPath } : {}),
       ...(macSigning?.provisioningProfilePath
         ? { provisioningProfile: macSigning.provisioningProfilePath }
@@ -3906,6 +3918,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+      options.previewSigningIdentity,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -4173,6 +4186,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   wslRuntime: Flag.String("wsl-runtime").pipe(
     Flag.withDescription(
       "Path to the Linux CLI release archive (t3-<version>-linux-x64.tar.gz) to embed as the WSL runtime of a Windows build (env: T3CODE_DESKTOP_WSL_RUNTIME).",
+    ),
+    Flag.optional,
+  ),
+  previewSigningIdentity: Flag.String("preview-signing-identity").pipe(
+    Flag.withDescription(
+      "Keychain code-signing identity for unsigned local macOS previews instead of ad-hoc, so TCC permissions survive rebuilds (env: SIGMA_PREVIEW_SIGNING_IDENTITY).",
     ),
     Flag.optional,
   ),
