@@ -82,11 +82,10 @@ vi.mock("../localApi", () => ({
 }));
 vi.mock("@t3tools/client-runtime/state/project-grouping", () => ({
   deriveLogicalProjectKeyFromSettings: () => "project",
-  derivePhysicalProjectKey: () => "project",
   selectProjectGroupingSettings: () => ({}),
 }));
 vi.mock("../sidebarProjectGrouping", () => ({
-  buildPhysicalToLogicalProjectKeyMap: () => new Map(),
+  buildProjectRefToLogicalProjectKeyMap: () => new Map(),
 }));
 vi.mock("../uiStateStore", () => ({
   useUiStateStore: (select: (store: unknown) => unknown) =>

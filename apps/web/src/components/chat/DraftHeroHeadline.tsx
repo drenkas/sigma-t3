@@ -219,7 +219,10 @@ export function DraftHeroHeadline({
       return false;
     }
     pendingScratchRef.current = null;
-    selectProject(project, deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings));
+    selectProject(
+      project,
+      deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings, { projects }),
+    );
     return true;
   };
 

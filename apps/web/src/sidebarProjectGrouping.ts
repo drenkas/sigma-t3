@@ -1,7 +1,7 @@
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import {
   buildProjectGroups,
-  derivePhysicalProjectKey,
   resolveScratchProjectScopeKey,
   type ProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
@@ -60,9 +60,11 @@ export function getSidebarProjectSettingsKey(
     group.memberProjects.find((member) => member.environmentId === projectRef?.environmentId) ??
     group;
   return (
-    buildPhysicalToLogicalProjectKeyMap({ projects, settings, primaryEnvironmentId: null }).get(
-      derivePhysicalProjectKey(project),
-    ) ?? group.projectKey
+    buildProjectRefToLogicalProjectKeyMap({
+      projects,
+      settings,
+      primaryEnvironmentId: null,
+    }).get(scopedProjectKey(scopeProjectRef(project.environmentId, project.id))) ?? group.projectKey
   );
 }
 
@@ -95,7 +97,7 @@ export function resolveSidebarProjectScopeKeys(input: {
   ];
 }
 
-export function buildPhysicalToLogicalProjectKeyMap(input: {
+export function buildProjectRefToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
   primaryEnvironmentId: EnvironmentId | null;
@@ -107,8 +109,8 @@ export function buildPhysicalToLogicalProjectKeyMap(input: {
     preferredEnvironmentId: input.primaryEnvironmentId,
   });
   for (const group of groups) {
-    for (const member of group.members) {
-      mapping.set(member.physicalProjectKey, group.key);
+    for (const { project } of group.members) {
+      mapping.set(scopedProjectKey(scopeProjectRef(project.environmentId, project.id)), group.key);
     }
   }
   return mapping;

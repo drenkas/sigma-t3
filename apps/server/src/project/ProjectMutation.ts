@@ -16,6 +16,9 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         projectId: mutation.projectId,
         title: mutation.title,
         workspaceRoot: mutation.workspaceRoot,
+        ...(mutation.additionalWorkspaceRoots === undefined
+          ? {}
+          : { additionalWorkspaceRoots: mutation.additionalWorkspaceRoots }),
         ...(mutation.createWorkspaceRootIfMissing === undefined
           ? {}
           : { createWorkspaceRootIfMissing: mutation.createWorkspaceRootIfMissing }),

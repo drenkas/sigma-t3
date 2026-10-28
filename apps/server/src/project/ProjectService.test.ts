@@ -389,7 +389,7 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 
-  it.effect("rejects a workspace another active project holds", () =>
+  it.effect("lets a project move to a workspace another active project holds", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;
       const other = ProjectId.make("project:conflict:mover");
@@ -405,17 +405,62 @@ it.layer(layerTest)("ProjectService", (it) => {
         title: "Mover",
         workspaceRoot: "/work/conflict-mover",
       });
-      const move = yield* service
-        .update({
-          commandId: CommandId.make("command:conflict:move"),
-          projectId: other,
-          workspaceRoot: "/work/conflict",
-        })
-        .pipe(Effect.flip);
-      assert.equal(move._tag, "ProjectConflictError");
+      const moved = yield* service.update({
+        commandId: CommandId.make("command:conflict:move"),
+        projectId: other,
+        workspaceRoot: "/work/conflict",
+      });
+      assert.equal(moved.workspaceRoot, "/work/conflict");
+    }),
+  );
+
+  it.effect("lets projects share a root and even an identical folder set", () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const ids = ["a", "b", "c"].map((name) => ProjectId.make(`project:shared-root:${name}`));
+      yield* service.create({
+        commandId: CommandId.make("command:shared-root:a"),
+        projectId: ids[0]!,
+        title: "A",
+        workspaceRoot: "/work/shared-root",
+      });
+      const folders = {
+        workspaceRoot: "/work/shared-root",
+        additionalWorkspaceRoots: ["/work/shared-root-docs/"],
+      };
+      const second = yield* service.create({
+        commandId: CommandId.make("command:shared-root:b"),
+        projectId: ids[1]!,
+        title: "B",
+        ...folders,
+      });
+      assert.deepEqual(second.additionalWorkspaceRoots, ["/work/shared-root-docs"]);
+      yield* service.create({
+        commandId: CommandId.make("command:shared-root:c"),
+        projectId: ids[2]!,
+        title: "C",
+        ...folders,
+      });
+
+      const shared = (yield* service.snapshot).projects.filter((project) =>
+        ids.includes(project.id),
+      );
+      assert.deepEqual(shared.map((project) => project.id).toSorted(), ids.toSorted());
+      const found = yield* service.findActiveByFolders(folders);
+      assert.equal(Option.getOrThrow(found).id, ids[1]);
       assert.equal(
-        Option.getOrThrow(yield* service.getById(other)).workspaceRoot,
-        "/work/conflict-mover",
+        Option.getOrThrow(
+          yield* service.findActiveByFolders({ workspaceRoot: "/work/shared-root/" }),
+        ).id,
+        ids[0],
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* service.findActiveByFolders({
+            workspaceRoot: "/work/shared-root",
+            additionalWorkspaceRoots: ["/work/elsewhere"],
+          }),
+        ),
       );
     }),
   );
@@ -459,36 +504,6 @@ it.layer(layerTest)("ProjectService", (it) => {
         additionalWorkspaceRoots: [],
       });
       assert.deepEqual(cleared.additionalWorkspaceRoots, []);
-    }),
-  );
-
-  it.effect("replays a workspace conflict after the workspace frees up", () =>
-    Effect.gen(function* () {
-      const service = yield* ProjectService.ProjectService;
-      const holderId = ProjectId.make("project:freed:holder");
-      yield* service.create({
-        commandId: CommandId.make("command:freed:holder"),
-        projectId: holderId,
-        title: "Holder",
-        workspaceRoot: "/work/freed",
-      });
-      const claim = {
-        commandId: CommandId.make("command:freed:claim"),
-        projectId: ProjectId.make("project:freed:claim"),
-        title: "Claim",
-        workspaceRoot: "/work/freed",
-      };
-      const first = yield* service.create(claim).pipe(Effect.flip);
-      yield* service.delete({
-        commandId: CommandId.make("command:freed:delete"),
-        projectId: holderId,
-      });
-      const replayed = yield* service.create(claim).pipe(Effect.flip);
-      assert.deepEqual(replayed, first);
-      assert.instanceOf(replayed, ProjectService.ProjectConflictError);
-      assert.isTrue(
-        Option.isNone(yield* service.getById(claim.projectId, { includeDeleted: true })),
-      );
     }),
   );
 
@@ -685,7 +700,7 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
   }),
 );
 
-it.effect("serializes two projects claiming the same workspace root", () =>
+it.effect("creates projects at one root concurrently but bootstraps one per root", () =>
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
     const firstReachedCommit = yield* Deferred.make<void>();
@@ -703,24 +718,30 @@ it.effect("serializes two projects claiming the same workspace root", () =>
     const service = yield* ProjectService.make.pipe(
       Effect.provideService(EventSink.EventSinkV2, gatedSink),
     );
-    const claim = (name: string) =>
-      service.create({
-        commandId: CommandId.make(`command:race:${name}`),
-        projectId: ProjectId.make(`project:race:${name}`),
-        title: name,
-        workspaceRoot: "/work/race",
-      });
-    const first = yield* claim("first").pipe(Effect.forkChild({ startImmediately: true }));
+    const claim = (name: string, workspaceRoot: string) => ({
+      commandId: CommandId.make(`command:race:${name}`),
+      projectId: ProjectId.make(`project:race:${name}`),
+      title: name,
+      workspaceRoot,
+    });
+    const first = yield* service
+      .bootstrap(claim("first", "/work/race"))
+      .pipe(Effect.forkChild({ startImmediately: true }));
     yield* Deferred.await(firstReachedCommit);
-    const second = yield* claim("second").pipe(
-      Effect.flip,
-      Effect.forkChild({ startImmediately: true }),
-    );
+    const racing = yield* service
+      .bootstrap(claim("second", "/work/race"))
+      .pipe(Effect.forkChild({ startImmediately: true }));
+    const plain = yield* service.create(claim("third", "/work/race"));
+    assert.equal(plain.id, "project:race:third");
     yield* Effect.yieldNow;
-    assert.isUndefined(second.pollUnsafe());
+    assert.isUndefined(racing.pollUnsafe());
     yield* Deferred.succeed(releaseFirst, undefined);
-    assert.equal((yield* Fiber.join(first)).id, "project:race:first");
-    assert.equal((yield* Fiber.join(second))._tag, "ProjectConflictError");
+    const bootstrapped = yield* Fiber.join(first);
+    assert.equal(bootstrapped.project.id, "project:race:first");
+    assert.isTrue(bootstrapped.created);
+    const joined = yield* Fiber.join(racing);
+    assert.equal(joined.project.id, "project:race:first");
+    assert.isFalse(joined.created);
   }).pipe(Effect.provide(layerProjectServiceDependencies)),
 );
 

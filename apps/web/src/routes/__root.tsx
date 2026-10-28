@@ -55,7 +55,7 @@ import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedProm
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { useAtomValue } from "@effect/atom-react";
 import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../state/server";
-import { readProject } from "../state/entities";
+import { readProject, readProjects } from "../state/entities";
 
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
@@ -339,7 +339,9 @@ function EventRouter({
       );
       const bootstrapProjectKey =
         (bootstrapProject
-          ? deriveLogicalProjectKeyFromSettings(bootstrapProject, projectGroupingSettings)
+          ? deriveLogicalProjectKeyFromSettings(bootstrapProject, projectGroupingSettings, {
+              projects: readProjects(),
+            })
           : null) ??
         (serverConfig?.cwd
           ? derivePhysicalProjectKeyFromPath(payload.environment.environmentId, serverConfig.cwd)

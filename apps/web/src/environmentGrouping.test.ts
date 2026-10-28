@@ -122,17 +122,17 @@ describe("environment grouping", () => {
     expect(resolveSidebarProjectScopeKey({ groups, key, canClearMissingScope: true })).toBe(key);
   });
 
-  it("dedupes stale project rows with the same environment and workspace path", () => {
+  it("shows a same-folder duplicate as its own row apart from the original and its remote checkout", () => {
+    const primary = makeProject({
+      id: ProjectId.make("project-primary"),
+      repositoryIdentity,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
     const duplicate = makeProject({
       id: ProjectId.make("project-duplicate"),
       workspaceRoot: "/tmp/shared-repo/",
       repositoryIdentity,
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    });
-    const primary = makeProject({
-      id: ProjectId.make("project-primary"),
-      repositoryIdentity,
-      updatedAt: "2026-01-02T00:00:00.000Z",
+      createdAt: "2026-01-02T00:00:00.000Z",
     });
     const remote = makeProject({
       id: ProjectId.make("project-remote"),
@@ -149,17 +149,16 @@ describe("environment grouping", () => {
         environmentId === remoteEnvironmentId ? "remote" : "primary",
     });
 
-    expect(snapshots).toHaveLength(1);
-    expect(snapshots[0]?.groupedProjectCount).toBe(2);
-    expect(snapshots[0]?.memberProjects.map((project) => project.id)).toEqual([
-      primary.id,
-      remote.id,
-    ]);
+    expect(
+      snapshots.map((snapshot) => snapshot.memberProjects.map((project) => project.id)),
+    ).toEqual([[primary.id, remote.id], [duplicate.id]]);
+    expect(snapshots[0]?.projectKey).toBe(repositoryIdentity.canonicalKey);
+    expect(snapshots[1]?.projectKey).not.toBe(snapshots[0]?.projectKey);
   });
 
-  it("dedupes stale project rows before logical grouping", () => {
-    const staleWithoutRepositoryIdentity = makeProject({
-      id: ProjectId.make("project-stale"),
+  it("shows a same-folder project without repository identity as its own row", () => {
+    const withoutRepositoryIdentity = makeProject({
+      id: ProjectId.make("project-plain"),
       repositoryIdentity: null,
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
@@ -175,37 +174,35 @@ describe("environment grouping", () => {
     });
 
     const snapshots = buildSidebarProjectSnapshots({
-      projects: [staleWithoutRepositoryIdentity, canonical, remote],
+      projects: [withoutRepositoryIdentity, canonical, remote],
       settings: defaultGroupingSettings,
       primaryEnvironmentId,
       resolveEnvironmentLabel: (environmentId) =>
         environmentId === remoteEnvironmentId ? "remote" : "primary",
     });
 
-    expect(snapshots).toHaveLength(1);
-    expect(snapshots[0]?.projectKey).toBe(repositoryIdentity.canonicalKey);
-    expect(snapshots[0]?.memberProjects.map((project) => project.id)).toEqual([
+    expect(snapshots).toHaveLength(2);
+    const repositoryRow = snapshots.find(
+      (snapshot) => snapshot.projectKey === repositoryIdentity.canonicalKey,
+    );
+    expect(repositoryRow?.memberProjects.map((project) => project.id)).toEqual([
       canonical.id,
       remote.id,
     ]);
-    expect(snapshots[0]?.memberProjectRefs).toEqual([
-      {
-        environmentId: primaryEnvironmentId,
-        projectId: staleWithoutRepositoryIdentity.id,
-      },
-      { environmentId: primaryEnvironmentId, projectId: canonical.id },
-      { environmentId: remoteEnvironmentId, projectId: remote.id },
+    const plainRow = snapshots.find((snapshot) => snapshot !== repositoryRow);
+    expect(plainRow?.memberProjectRefs).toEqual([
+      { environmentId: primaryEnvironmentId, projectId: withoutRepositoryIdentity.id },
     ]);
 
     const [pickerEntry] = buildSidebarProjectPickerEntries({
       groups: snapshots,
       preferredProjectRef: {
         environmentId: primaryEnvironmentId,
-        projectId: staleWithoutRepositoryIdentity.id,
+        projectId: withoutRepositoryIdentity.id,
       },
     });
     expect(pickerEntry?.isPreferred).toBe(true);
-    expect(pickerEntry?.targetProject.id).toBe(canonical.id);
+    expect(pickerEntry?.targetProject.id).toBe(withoutRepositoryIdentity.id);
   });
 
   it("keeps the current environment when available and falls back otherwise", () => {

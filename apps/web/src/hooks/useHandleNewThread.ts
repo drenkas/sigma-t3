@@ -188,7 +188,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       });
     };
     const logicalProjectKey = project
-      ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
+      ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings, { projects })
       : scopedProjectKey(projectRef);
     const hasBranchOption = options?.branch !== undefined;
     const hasWorktreePathOption = options?.worktreePath !== undefined;

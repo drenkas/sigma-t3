@@ -13,7 +13,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationV2AppThread,
-  type ProjectId,
+  ProjectId,
 } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import * as DateTime from "effect/DateTime";
@@ -80,7 +80,10 @@ const makeConfig = (baseDir: string) =>
     } satisfies ServerConfig.ServerConfig["Service"];
   });
 
-const readProjects = (baseDir: string) =>
+const withProjectService = <A, E, R>(
+  baseDir: string,
+  use: (projects: ProjectService.ProjectService["Service"]) => Effect.Effect<A, E, R>,
+) =>
   Effect.gen(function* () {
     const config = yield* makeConfig(baseDir);
     const layer = RuntimeLayer.layerProjectService.pipe(
@@ -95,11 +98,11 @@ const readProjects = (baseDir: string) =>
       Layer.provide(ServerConfig.layer(config)),
       Layer.provide(Layer.succeed(References.MinimumLogLevel, config.logLevel)),
     );
-    return yield* ProjectService.ProjectService.pipe(
-      Effect.flatMap((projects) => projects.snapshot),
-      Effect.provide(layer),
-    );
+    return yield* ProjectService.ProjectService.pipe(Effect.flatMap(use), Effect.provide(layer));
   });
+
+const readProjects = (baseDir: string) =>
+  withProjectService(baseDir, (projects) => projects.snapshot);
 
 it.effect("adds, renames, and removes projects through the V2 project CLI domain", () =>
   Effect.gen(function* () {
@@ -328,6 +331,35 @@ it.layer(NodeServices.layer)("project lookup with unavailable workspaces", (it) 
         assert.deepEqual((yield* readProjects(baseDir)).projects, []);
         assert.isFalse(yield* fs.exists(workspaceRoot));
       }),
+  );
+
+  it.effect("asks for an id when several active projects share the path", () =>
+    Effect.gen(function* () {
+      const { baseDir, workspaceRoot, project } = yield* makeProjectLookupFixture();
+      const duplicateId = ProjectId.make("project-cli-duplicate");
+      yield* withProjectService(baseDir, (projects) =>
+        projects.create({
+          commandId: CommandId.make("project-cli-create-duplicate"),
+          projectId: duplicateId,
+          title: "Duplicate",
+          workspaceRoot,
+        }),
+      );
+
+      const error = yield* runCli(["project", "remove", workspaceRoot, "--base-dir", baseDir]).pipe(
+        Effect.flip,
+      );
+      assert.include(error.message, project.id);
+      assert.include(error.message, duplicateId);
+      assert.include(error.message, "Pass a project id");
+      assert.lengthOf((yield* readProjects(baseDir)).projects, 2);
+
+      yield* runCli(["project", "remove", duplicateId, "--base-dir", baseDir]);
+      assert.deepEqual(
+        (yield* readProjects(baseDir)).projects.map((entry) => entry.id),
+        [project.id],
+      );
+    }),
   );
 
   it.effect("does not resolve another environment's project ID in an empty database", () =>

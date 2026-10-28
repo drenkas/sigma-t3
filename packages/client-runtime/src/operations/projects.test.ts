@@ -3,10 +3,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import {
+  appendProjectFolder,
   findExistingAddProject,
   getCloneDirectoryName,
   getDefaultCloneUrl,
+  MAX_PROJECT_FOLDERS,
   normalizePastedCloneUrl,
+  uniqueProjectTitle,
 } from "./projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
 
@@ -100,5 +103,63 @@ describe("add project shared logic", () => {
     expect(findExistingAddProject({ projects, environmentId: env, path: "/repo" })?.id).toBe(
       "project",
     );
+  });
+
+  it("ignores projects that have additional folders", () => {
+    const env = EnvironmentId.make("env");
+    const projects: EnvironmentProject[] = [
+      {
+        environmentId: env,
+        id: ProjectId.make("folders"),
+        title: "Repo + api",
+        workspaceRoot: "/repo",
+        additionalWorkspaceRoots: ["/api"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
+      },
+    ];
+
+    expect(findExistingAddProject({ projects, environmentId: env, path: "/repo" })).toBeNull();
+    expect(
+      findExistingAddProject({
+        projects: [{ ...projects[0]!, additionalWorkspaceRoots: [] }],
+        environmentId: env,
+        path: "/repo",
+      })?.id,
+    ).toBe("folders");
+  });
+});
+
+describe("appendProjectFolder", () => {
+  it("appends in pick order and ignores a folder already picked", () => {
+    const first = appendProjectFolder([], "/work/app");
+    expect(first).toEqual({ folders: ["/work/app"], status: "added" });
+    const second = appendProjectFolder(first.folders, "/work/api");
+    expect(second.folders).toEqual(["/work/app", "/work/api"]);
+    expect(appendProjectFolder(second.folders, "/work/app/")).toEqual({
+      folders: ["/work/app", "/work/api"],
+      status: "duplicate",
+    });
+  });
+
+  it("stops at one working folder plus twenty additional folders", () => {
+    const full = Array.from({ length: MAX_PROJECT_FOLDERS }, (_, index) => `/work/${index}`);
+    expect(appendProjectFolder(full, "/work/extra")).toEqual({ folders: full, status: "full" });
+  });
+});
+
+describe("uniqueProjectTitle", () => {
+  it("keeps an unused title", () => {
+    expect(uniqueProjectTitle("app", [])).toBe("app");
+    expect(uniqueProjectTitle("app", ["api", "app 2"])).toBe("app");
+  });
+
+  it("numbers from 2 and takes the first free number, ignoring case and padding", () => {
+    expect(uniqueProjectTitle("app", ["App "])).toBe("app 2");
+    expect(uniqueProjectTitle("app", ["app", "APP 2", " app 3 "])).toBe("app 4");
+    expect(uniqueProjectTitle("app", ["app", "app 3"])).toBe("app 2");
   });
 });

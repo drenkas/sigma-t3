@@ -87,7 +87,7 @@ export class ProjectStoreV2 extends Context.Service<
       readonly projectIds?: ReadonlyArray<ProjectId>;
       readonly includeDeleted?: boolean;
     }) => Effect.Effect<ReadonlyArray<ProjectRow>, ProjectStoreV2Error>;
-    /** Workspace roots match by exact string; callers normalize before asking. */
+    /** Workspace roots match by exact string; callers normalize before asking. Returns the oldest. */
     readonly findActiveByWorkspaceRoot: (
       workspaceRoot: string,
     ) => Effect.Effect<Option.Option<ProjectRow>, ProjectStoreV2Error>;
@@ -231,6 +231,7 @@ export const make = Effect.gen(function* () {
           defaultModelSelection: payload.defaultModelSelection,
           defaultThreadEnvMode: payload.defaultThreadEnvMode ?? null,
           autoPull: false,
+          additionalWorkspaceRoots: payload.additionalWorkspaceRoots ?? [],
           faviconPath: payload.faviconPath ?? null,
           projectIcon: payload.projectIcon ?? null,
           scripts: payload.scripts,

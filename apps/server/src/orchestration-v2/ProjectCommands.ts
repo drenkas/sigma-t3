@@ -22,6 +22,7 @@ export interface ProjectCreateCommand {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly workspaceRoot: string;
+  readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
   readonly scripts?: ReadonlyArray<ProjectScript>;
 }
 
@@ -72,22 +73,9 @@ export class ProjectCommandMissingProjectError extends Schema.TaggedError<Projec
   }
 }
 
-export class ProjectWorkspaceConflictError extends Schema.TaggedError<ProjectWorkspaceConflictError>()(
-  "ProjectWorkspaceConflictError",
-  {
-    workspaceRoot: Schema.String,
-    conflictingProjectId: ProjectId,
-  },
-) {
-  override get message(): string {
-    return `Active project '${this.conflictingProjectId}' already exists for workspace root '${this.workspaceRoot}'.`;
-  }
-}
-
 export const ProjectCommandRejection = Schema.Union([
   ProjectCommandInvariantError,
   ProjectCommandMissingProjectError,
-  ProjectWorkspaceConflictError,
 ]);
 export type ProjectCommandRejection = typeof ProjectCommandRejection.Type;
 
@@ -99,8 +87,15 @@ export const decodeProjectCommandRejection = Schema.decodeUnknownOption(
 
 export interface ProjectCommandState {
   readonly project: ProjectRow | undefined;
-  readonly workspaceOwner: ProjectRow | undefined;
 }
+
+const hasDistinctAdditionalRoots = (
+  root: string,
+  additionalWorkspaceRoots: ReadonlyArray<string>,
+) => {
+  const folders = new Set(additionalWorkspaceRoots);
+  return !folders.has(root) && folders.size === additionalWorkspaceRoots.length;
+};
 
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
@@ -123,13 +118,6 @@ export function planProjectCommand(input: {
       }),
     );
   const activeProject = state.project?.deletedAt === null ? state.project : undefined;
-  const requireWorkspaceAvailable = (workspaceRoot: string) =>
-    state.workspaceOwner === undefined || state.workspaceOwner.projectId === command.projectId
-      ? undefined
-      : new ProjectWorkspaceConflictError({
-          workspaceRoot,
-          conflictingProjectId: state.workspaceOwner.projectId,
-        });
   const occurredAt = DateTime.formatIso(input.now);
   const base = {
     eventId: input.eventId,
@@ -149,8 +137,10 @@ export function planProjectCommand(input: {
           `Project '${command.projectId}' already exists and cannot be created twice.`,
         );
       }
-      const conflict = requireWorkspaceAvailable(command.workspaceRoot);
-      if (conflict !== undefined) return Result.fail(conflict);
+      const additionalWorkspaceRoots = command.additionalWorkspaceRoots ?? [];
+      if (!hasDistinctAdditionalRoots(command.workspaceRoot, additionalWorkspaceRoots)) {
+        return invariant("Additional folders must be distinct and differ from the project root.");
+      }
       return Result.succeed({
         ...base,
         type: "project.created",
@@ -158,6 +148,7 @@ export function planProjectCommand(input: {
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
+          ...(command.additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
@@ -188,16 +179,12 @@ export function planProjectCommand(input: {
           }
         }
       }
-      if (command.workspaceRoot !== undefined) {
-        const conflict = requireWorkspaceAvailable(command.workspaceRoot);
-        if (conflict !== undefined) return Result.fail(conflict);
-      }
-      if (command.additionalWorkspaceRoots !== undefined) {
-        const root = command.workspaceRoot ?? project.workspaceRoot;
-        const folders = new Set(command.additionalWorkspaceRoots);
-        if (folders.has(root) || folders.size !== command.additionalWorkspaceRoots.length) {
-          return invariant("Additional folders must be distinct and differ from the project root.");
-        }
+      const root = command.workspaceRoot ?? project.workspaceRoot;
+      if (
+        command.additionalWorkspaceRoots !== undefined &&
+        !hasDistinctAdditionalRoots(root, command.additionalWorkspaceRoots)
+      ) {
+        return invariant("Additional folders must be distinct and differ from the project root.");
       }
       return Result.succeed({
         ...base,

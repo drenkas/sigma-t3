@@ -40,7 +40,7 @@ const script = (id: string): ProjectScript => ({
 const plan = (command: ProjectCommand, state: Partial<ProjectCommandState> = {}) =>
   planProjectCommand({
     command,
-    state: { project: undefined, workspaceOwner: undefined, ...state },
+    state: { project: undefined, ...state },
     eventId: EventId.make("event:planned"),
     now,
   });
@@ -77,40 +77,57 @@ describe("planProjectCommand", () => {
     );
   });
 
-  it("rejects a workspace root held by another active project", () => {
-    const owner = row({
-      projectId: ProjectId.make("project-existing"),
+  describe("additional folders", () => {
+    const create = (additionalWorkspaceRoots?: ReadonlyArray<string>): ProjectCommand => ({
+      type: "project.create",
+      commandId: CommandId.make("cmd-folder-set"),
+      projectId: ProjectId.make("project-folder-set"),
+      title: "Folder set",
       workspaceRoot: "/tmp/project",
+      ...(additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
     });
-    const create = failureOf(
-      plan(
-        {
-          type: "project.create",
-          commandId: CommandId.make("cmd-duplicate-root"),
-          projectId: ProjectId.make("project-duplicate-root"),
-          title: "Duplicate",
-          workspaceRoot: "/tmp/project",
-        },
-        { workspaceOwner: owner },
-      ),
-    );
-    assert.equal(create._tag, "ProjectWorkspaceConflictError");
-    assert.equal(
-      create.message,
-      "Active project 'project-existing' already exists for workspace root '/tmp/project'.",
-    );
-    const move = failureOf(
-      plan(
-        {
-          type: "project.meta.update",
-          commandId: CommandId.make("cmd-move-root"),
-          projectId,
-          workspaceRoot: "/tmp/project",
-        },
-        { project: row(), workspaceOwner: owner },
-      ),
-    );
-    assert.equal(move._tag, "ProjectWorkspaceConflictError");
+    const update = (
+      patch: Partial<Extract<ProjectCommand, { type: "project.meta.update" }>>,
+    ): ProjectCommand => ({
+      type: "project.meta.update",
+      commandId: CommandId.make("cmd-folder-update"),
+      projectId,
+      ...patch,
+    });
+
+    it("records the folders on create", () => {
+      for (const additional of [undefined, ["/tmp/b"], ["/tmp/b", "/tmp/c", "/tmp/d"]]) {
+        assert.deepEqual(payloadOf(plan(create(additional))).additionalWorkspaceRoots, additional);
+      }
+    });
+
+    it("accepts a root and folder set that other projects may also hold", () => {
+      const state = { project: row({ workspaceRoot: "/tmp/project" }) };
+      assert.deepEqual(
+        payloadOf(
+          plan(
+            update({ workspaceRoot: "/tmp/other", additionalWorkspaceRoots: ["/tmp/b"] }),
+            state,
+          ),
+        ).additionalWorkspaceRoots,
+        ["/tmp/b"],
+      );
+      assert.equal(payloadOf(plan(update({ title: "Renamed" }), state)).title, "Renamed");
+    });
+
+    it("rejects additional folders that repeat or contain the root", () => {
+      for (const additional of [["/tmp/project"], ["/tmp/b", "/tmp/b"]]) {
+        assert.equal(failureOf(plan(create(additional)))._tag, "ProjectCommandInvariantError");
+        assert.equal(
+          failureOf(
+            plan(update({ additionalWorkspaceRoots: additional }), {
+              project: row({ workspaceRoot: "/tmp/project" }),
+            }),
+          )._tag,
+          "ProjectCommandInvariantError",
+        );
+      }
+    });
   });
 
   it("requires the project to exist, and to be absent on create", () => {

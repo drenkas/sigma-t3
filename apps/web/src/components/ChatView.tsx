@@ -240,6 +240,7 @@ import {
   usePrimaryEnvironment,
 } from "../state/environments";
 import {
+  readProjects,
   resolveThreadDetailRef,
   useEnvironmentSupportsServerBrowser,
   useProject,
@@ -1059,15 +1060,16 @@ export default function ChatView(props: ChatViewProps) {
   };
   const handleNewThreadInActiveProjectStable = useStableCallback(handleNewThreadInActiveProject);
   const projectGroupingSettings = selectProjectGroupingSettings(settings);
-  const activeDraftLogicalProjectKey =
-    !isServerThread && activeProject
-      ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
-      : undefined;
+  const canOpenDraftProjectSettings = !isServerThread && activeProject !== null;
   const handleOpenDraftProjectSettings = () => {
-    if (!activeDraftLogicalProjectKey) return;
+    if (isServerThread || !activeProject) return;
     void navigate({
       to: "/projects/$projectKey",
-      params: { projectKey: activeDraftLogicalProjectKey },
+      params: {
+        projectKey: deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings, {
+          projects: readProjects(),
+        }),
+      },
     });
   };
   const handleOpenDraftProjectSettingsStable = useStableCallback(handleOpenDraftProjectSettings);
@@ -3155,7 +3157,7 @@ export default function ChatView(props: ChatViewProps) {
             onOpenThread={onOpenRelatedThreadStable}
             rightPanelOpen={inlineRightPanelOwnsTitleBar}
             onNewThreadInProject={handleNewThreadInActiveProjectStable}
-            {...(activeDraftLogicalProjectKey
+            {...(canOpenDraftProjectSettings
               ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
               : {})}
           />

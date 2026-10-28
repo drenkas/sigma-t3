@@ -42,11 +42,10 @@ import {
 import { resolveStorage } from "./lib/storage";
 import {
   deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKey,
   selectProjectGroupingSettings,
   type ProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import { buildPhysicalToLogicalProjectKeyMap } from "./sidebarProjectGrouping";
+import { buildProjectRefToLogicalProjectKeyMap } from "./sidebarProjectGrouping";
 import type { Project } from "./types";
 
 export type BrowserHistoryEntry = { url: string; lastVisitedAt: number; title?: string };
@@ -356,8 +355,8 @@ function deriveHistoryProjectKey(
   primaryEnvironmentId: EnvironmentId | null,
 ): string {
   return (
-    buildPhysicalToLogicalProjectKeyMap({ projects, settings, primaryEnvironmentId }).get(
-      derivePhysicalProjectKey(project),
+    buildProjectRefToLogicalProjectKeyMap({ projects, settings, primaryEnvironmentId }).get(
+      scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
     ) ?? deriveLogicalProjectKeyFromSettings(project, settings)
   );
 }

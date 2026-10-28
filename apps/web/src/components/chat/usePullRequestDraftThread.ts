@@ -12,6 +12,7 @@ import {
 } from "@t3tools/client-runtime/state/project-grouping";
 import { buildDraftThreadRouteParams } from "../../threadRoutes";
 import { type DraftThreadEnvMode, useComposerDraftStore, DraftId } from "../../composerDraftStore";
+import { readProjects } from "../../state/entities";
 import { openPullRequestThreadDialog } from "./ChatOverlayHosts";
 interface PullRequestDraftThreadInput {
   readonly routeKind: "server" | "draft";
@@ -70,6 +71,7 @@ export function usePullRequestDraftThread(input: PullRequestDraftThreadInput) {
     const logicalProjectKey = deriveLogicalProjectKeyFromSettings(
       activeProject,
       projectGroupingSettings,
+      { projects: readProjects() },
     );
     const storedDraftSession = getDraftSessionByLogicalProjectKey(logicalProjectKey);
     if (storedDraftSession) {

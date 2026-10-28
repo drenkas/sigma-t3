@@ -3512,11 +3512,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
 /** A project with additional folders lists every folder an agent may work in. */
 function ProjectFolderCount({ project }: { project: SidebarProjectSnapshot }) {
-  const folders = project.memberProjects.flatMap((member) => [
-    member.workspaceRoot,
-    ...(member.additionalWorkspaceRoots ?? []),
-  ]);
-  if (folders.length === project.memberProjects.length) return null;
+  const folders = [
+    ...new Set([project.workspaceRoot, ...(project.additionalWorkspaceRoots ?? [])]),
+  ];
+  if (folders.length === 1) return null;
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="shrink-0 text-xs text-muted-foreground" />}>

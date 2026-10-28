@@ -1,5 +1,5 @@
 import { useAtomCommand } from "~/state/use-atom-command";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -22,10 +22,9 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useClientSettings, useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKey,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import { buildPhysicalToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
+import { buildProjectRefToLogicalProjectKeyMap } from "~/sidebarProjectGrouping";
 import { useProjects } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 
@@ -65,11 +64,11 @@ export function usePullRequestDefaultMergeMethodResolver(
     );
     if (!project) return undefined;
     const key =
-      buildPhysicalToLogicalProjectKeyMap({
+      buildProjectRefToLogicalProjectKeyMap({
         projects,
         settings: grouping,
         primaryEnvironmentId,
-      }).get(derivePhysicalProjectKey(project)) ??
+      }).get(scopedProjectKey(scopeProjectRef(project.environmentId, project.id))) ??
       deriveLogicalProjectKeyFromSettings(project, grouping);
     return legacyOverrides[key];
   };

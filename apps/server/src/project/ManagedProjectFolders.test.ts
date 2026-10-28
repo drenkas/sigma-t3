@@ -433,40 +433,6 @@ it.effect("keeps a named project and reports why when Git cannot commit", () =>
   ),
 );
 
-it.effect("keeps a folder that another project owns when the create conflicts", () =>
-  withScratch(({ baseDir }) =>
-    withGitEnv(
-      TEST_IDENTITY,
-      Effect.gen(function* () {
-        const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
-        const projects = yield* ProjectService.ProjectService;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const taken = path.join(folders.namedProjectsRoot, "taken");
-        yield* projects.create({
-          commandId: CommandId.make("command:owner"),
-          projectId: ProjectId.make("project:owner"),
-          title: "Owner",
-          workspaceRoot: taken,
-          createWorkspaceRootIfMissing: true,
-        });
-        yield* fileSystem.remove(taken, { recursive: true });
-
-        const failure = yield* Effect.flip(folders.createNamedProject({ name: "Taken" }));
-
-        assert.equal(failure._tag, "NamedProjectCreateError");
-        assert.equal(failure.message, "Failed to create the project.");
-        assert.isTrue(yield* fileSystem.exists(path.join(taken, "README.md")));
-        const owner = yield* projects.getByWorkspaceRoot(taken);
-        assert.equal(Option.getOrThrow(owner).id, ProjectId.make("project:owner"));
-        assert.deepEqual(yield* fileSystem.readDirectory(path.resolve(baseDir, "projects")), [
-          "taken",
-        ]);
-      }),
-    ),
-  ),
-);
-
 it.effect("removes the folder when the project create is rejected for another reason", () =>
   withScratch(
     ({ baseDir }) =>

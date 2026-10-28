@@ -58,11 +58,16 @@ export function useLogicalProjectEnvironments(
       pushEnvironment(environment.environmentId, scratchProject?.id ?? null);
     }
   } else {
-    const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
+    const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings, {
+      projects: allProjects,
+    });
     const seen = new Set<string>();
     for (const p of allProjects) {
       if (seen.has(p.environmentId)) continue;
-      if (deriveLogicalProjectKeyFromSettings(p, projectGroupingSettings) !== logicalKey) continue;
+      const projectKey = deriveLogicalProjectKeyFromSettings(p, projectGroupingSettings, {
+        projects: allProjects,
+      });
+      if (projectKey !== logicalKey) continue;
       seen.add(p.environmentId);
       pushEnvironment(p.environmentId, p.id);
     }

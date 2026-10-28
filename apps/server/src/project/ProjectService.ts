@@ -62,19 +62,6 @@ export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundErro
   }
 }
 
-export class ProjectConflictError extends Schema.TaggedError<ProjectConflictError>()(
-  "ProjectConflictError",
-  {
-    projectId: ProjectId,
-    workspaceRoot: Schema.String,
-    conflictingProjectId: ProjectId,
-  },
-) {
-  override get message(): string {
-    return `Workspace ${this.workspaceRoot} already belongs to project ${this.conflictingProjectId}.`;
-  }
-}
-
 export class ProjectNotEmptyError extends Schema.TaggedError<ProjectNotEmptyError>()(
   "ProjectNotEmptyError",
   { projectId: ProjectId },
@@ -107,7 +94,6 @@ export class ProjectOperationError extends Schema.TaggedError<ProjectOperationEr
 
 export type ProjectServiceError =
   | ProjectNotFoundError
-  | ProjectConflictError
   | ProjectNotEmptyError
   | ProjectOperationError;
 
@@ -131,6 +117,11 @@ export class ProjectService extends Context.Service<
       workspaceRoot: string,
       options?: { readonly includeDeleted?: boolean },
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
+    /** Oldest active project with this root and the same additional folders in any order. */
+    readonly findActiveByFolders: (input: {
+      readonly workspaceRoot: string;
+      readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
+    }) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly snapshot: Effect.Effect<ProjectSnapshot, ProjectOperationError>;
     /**
      * A page of active projects in creation order, each with its repository
@@ -227,27 +218,13 @@ export const make = Effect.gen(function* () {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
       new ProjectOperationError({ operation: "dispatch-project-command", projectId, cause });
-    const workspaceRoot = command.type === "project.delete" ? undefined : command.workspaceRoot;
     const planAndCommit = Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* readRow(projectId, { includeDeleted: true }));
-      const workspaceOwner =
-        workspaceRoot === undefined
-          ? undefined
-          : Option.getOrUndefined(
-              yield* projects
-                .findActiveByWorkspaceRoot(workspaceRoot)
-                .pipe(Effect.mapError(dispatchError)),
-            );
       const now = yield* DateTime.now;
       const eventId = yield* idAllocator.allocate
         .event({ commandId: command.commandId })
         .pipe(Effect.mapError(dispatchError));
-      const planned = planProjectCommand({
-        command,
-        state: { project, workspaceOwner },
-        eventId,
-        now,
-      });
+      const planned = planProjectCommand({ command, state: { project }, eventId, now });
       if (Result.isSuccess(planned)) {
         const { receipt } = yield* eventSink.commitProjectCommand({
           commandId: command.commandId,
@@ -267,12 +244,7 @@ export const make = Effect.gen(function* () {
       });
     });
     const receipt = yield* projectLocks
-      .withLock(
-        projectId,
-        workspaceRoot === undefined
-          ? planAndCommit
-          : workspaceLocks.withLock(workspaceRoot, planAndCommit),
-      )
+      .withLock(projectId, planAndCommit)
       .pipe(Effect.mapError(dispatchError));
     if (receipt.projectId !== projectId || receipt.commandType !== command.type) {
       return yield* dispatchError(
@@ -283,12 +255,6 @@ export const make = Effect.gen(function* () {
     if (receipt.status === "accepted") return;
     const rejection = Option.getOrUndefined(decodeProjectCommandRejection(receipt.error));
     switch (rejection?._tag) {
-      case "ProjectWorkspaceConflictError":
-        return yield* new ProjectConflictError({
-          projectId,
-          workspaceRoot: rejection.workspaceRoot,
-          conflictingProjectId: rejection.conflictingProjectId,
-        });
       case "ProjectCommandMissingProjectError":
         return yield* new ProjectNotFoundError({ projectId });
       default:
@@ -337,6 +303,33 @@ export const make = Effect.gen(function* () {
     return Option.isNone(row) ? Option.none() : Option.some(yield* hydrate(row.value));
   });
 
+  const findActiveByFolders: ProjectService["Service"]["findActiveByFolders"] = Effect.fn(
+    "ProjectService.findActiveByFolders",
+  )(function* (input) {
+    // Folders that no longer normalize (for example deleted ones) match no project.
+    const normalized = yield* Effect.all({
+      root: normalizeWorkspaceRoot({ workspaceRoot: input.workspaceRoot }),
+      additional: Effect.forEach(input.additionalWorkspaceRoots ?? [], (workspaceRoot) =>
+        normalizeWorkspaceRoot({ workspaceRoot }),
+      ),
+    }).pipe(Effect.option);
+    if (Option.isNone(normalized)) return Option.none();
+    const key = (root: string, additional: ReadonlyArray<string>) =>
+      JSON.stringify([root, additional.toSorted()]);
+    const wanted = key(normalized.value.root, normalized.value.additional);
+    const rows = yield* projects
+      .list()
+      .pipe(
+        Effect.mapError(
+          (cause) => new ProjectOperationError({ operation: "list-projects", cause }),
+        ),
+      );
+    const match = rows.find(
+      (row) => key(row.workspaceRoot, row.additionalWorkspaceRoots ?? []) === wanted,
+    );
+    return match === undefined ? Option.none() : Option.some(yield* hydrate(match));
+  });
+
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
       const workspaceRoot = yield* normalizeWorkspaceRoot({
@@ -344,12 +337,19 @@ export const make = Effect.gen(function* () {
         workspaceRoot: input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
+      const additionalWorkspaceRoots =
+        input.additionalWorkspaceRoots === undefined
+          ? undefined
+          : yield* Effect.forEach(input.additionalWorkspaceRoots, (folder) =>
+              normalizeWorkspaceRoot({ projectId: input.projectId, workspaceRoot: folder }),
+            );
       yield* commit({
         type: "project.create",
         commandId: input.commandId,
         projectId: input.projectId,
         title: input.title,
         workspaceRoot,
+        ...(additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
       });
       yield* projectEnrichment.invalidate([workspaceRoot]);
@@ -404,9 +404,20 @@ export const make = Effect.gen(function* () {
 
   const bootstrap: ProjectService["Service"]["bootstrap"] = Effect.fn("ProjectService.bootstrap")(
     function* (input) {
-      const existing = yield* getByWorkspaceRoot(input.workspaceRoot);
-      if (Option.isSome(existing)) return { project: existing.value, created: false };
-      return { project: yield* create(input), created: true };
+      const workspaceRoot = yield* normalizeWorkspaceRoot({
+        projectId: input.projectId,
+        workspaceRoot: input.workspaceRoot,
+        createIfMissing: input.createWorkspaceRootIfMissing ?? false,
+      });
+      // Get-or-create must be atomic per root, or racing bootstraps each create a project.
+      return yield* workspaceLocks.withLock(
+        workspaceRoot,
+        Effect.gen(function* () {
+          const existing = yield* getByWorkspaceRoot(workspaceRoot);
+          if (Option.isSome(existing)) return { project: existing.value, created: false };
+          return { project: yield* create({ ...input, workspaceRoot }), created: true };
+        }),
+      );
     },
   );
 
@@ -600,6 +611,7 @@ export const make = Effect.gen(function* () {
     delete: deleteProject,
     getById,
     getByWorkspaceRoot,
+    findActiveByFolders,
     snapshot,
     listPage,
     getShell,

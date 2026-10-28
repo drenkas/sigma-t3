@@ -1,4 +1,4 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
 import {
@@ -37,10 +37,9 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
 import {
   deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKey,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
+import { buildProjectRefToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -68,7 +67,7 @@ export function useThreadActionMenu(input: {
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const logicalProjectKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
+  const logicalProjectKeyByProjectRef = buildProjectRefToLogicalProjectKeyMap({
     projects,
     settings: projectGroupingSettings,
     primaryEnvironmentId,
@@ -192,8 +191,9 @@ export function useThreadActionMenu(input: {
           );
           if (!project) return;
           const projectKey =
-            logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
-            deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
+            logicalProjectKeyByProjectRef.get(
+              scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+            ) ?? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
           void router.navigate({
             to: "/projects/$projectKey",
             params: { projectKey },

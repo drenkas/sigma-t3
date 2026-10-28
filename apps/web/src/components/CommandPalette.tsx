@@ -12,10 +12,14 @@ import {
   getCloneDestinationPath,
   getCloneDirectoryName,
   getDefaultCloneUrl,
+  appendProjectFolder,
+  findExistingAddProject,
   getNewProjectPathPreview,
   getNewProjectPublishTarget,
   getNewProjectPublishTargets,
   getNewProjectRepository,
+  MAX_PROJECT_FOLDERS,
+  uniqueProjectTitle,
   normalizePastedCloneUrl,
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
@@ -61,6 +65,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  FoldersIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -71,6 +76,7 @@ import {
   SquarePenIcon,
   TextSearchIcon,
   UserPlusIcon,
+  XIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
@@ -126,7 +132,6 @@ import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
-  findProjectByPath,
   getBrowseDirectoryPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
@@ -476,6 +481,12 @@ function OpenCommandPaletteDialog(props: {
   );
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
+  const [addProjectFoldersFlow, setAddProjectFoldersFlow] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly folders: ReadonlyArray<string>;
+  } | null>(null);
+  const [isCreatingFoldersProject, setIsCreatingFoldersProject] = useState(false);
+  const foldersProjectSubmittingRef = useRef(false);
   const [newProjectFlow, setNewProjectFlow] = useState<{
     readonly environmentId: EnvironmentId;
     readonly sourcesEnvironmentId: EnvironmentId | null;
@@ -828,9 +839,13 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   });
 
+  // Clearing the path must not discard folders already picked.
+  const hasPickedFolders = (addProjectFoldersFlow?.folders.length ?? 0) > 0;
+
   function popView(): void {
     browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
+    setAddProjectFoldersFlow(null);
     setNewProjectFlow(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
@@ -844,18 +859,32 @@ function OpenCommandPaletteDialog(props: {
   function handleQueryChange(nextQuery: string): void {
     browseNavigation.invalidate();
     clearTypedHighlight();
-    setQuery(nextQuery);
     if (nextQuery === "" && currentView?.initialQuery) {
-      popView();
+      if (hasPickedFolders) {
+        setQuery(currentView.initialQuery);
+      } else {
+        setQuery(nextQuery);
+        popView();
+      }
+      return;
     }
+    setQuery(nextQuery);
   }
 
-  const startAddProjectBrowse = async (environmentId: EnvironmentId): Promise<void> => {
+  const startAddProjectBrowse = async (
+    environmentId: EnvironmentId,
+    mode: "project" | "folders" = "project",
+  ): Promise<void> => {
     const initialQuery = getAddProjectInitialQueryForEnvironment(environmentId);
     const initialBrowsePath = getBrowseDirectoryPath(initialQuery);
     const browseCwd = getBrowseCwdForEnvironment(environmentId);
     const view: CommandPaletteView = {
-      addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+      addonIcon:
+        mode === "folders" ? (
+          <FoldersIcon className={ADDON_ICON_CLASS} />
+        ) : (
+          <FolderPlusIcon className={ADDON_ICON_CLASS} />
+        ),
       groups: [],
       initialQuery,
     };
@@ -868,6 +897,7 @@ function OpenCommandPaletteDialog(props: {
       () => {
         setAddProjectEnvironmentId(environmentId);
         setAddProjectCloneFlow(null);
+        setAddProjectFoldersFlow(mode === "folders" ? { environmentId, folders: [] } : null);
         pushPaletteView(view);
       },
     );
@@ -878,6 +908,7 @@ function OpenCommandPaletteDialog(props: {
     source: AddProjectRemoteSource,
   ): void => {
     setAddProjectEnvironmentId(environmentId);
+    setAddProjectFoldersFlow(null);
     setAddProjectCloneFlow({ step: "repository", environmentId, source });
     pushPaletteView({
       addonIcon: remoteProjectSourceIcon(source, ADDON_ICON_CLASS),
@@ -896,6 +927,7 @@ function OpenCommandPaletteDialog(props: {
   ): void => {
     setAddProjectEnvironmentId(environmentId);
     setAddProjectCloneFlow(null);
+    setAddProjectFoldersFlow(null);
     setNewProjectFlow({ environmentId, sourcesEnvironmentId });
     setNewProjectPublishes(false);
     setNewProjectPublishKind(null);
@@ -925,6 +957,18 @@ function OpenCommandPaletteDialog(props: {
         keepOpen: true,
         run: async () => {
           await startAddProjectBrowse(environmentId);
+        },
+      },
+      {
+        kind: "action",
+        value: `action:add-project:${environmentId}:folders`,
+        searchTerms: ["folders", "multiple", "workspace", "environment"],
+        title: "Folders",
+        description: "Pick several folders for one project",
+        icon: <FoldersIcon className={ITEM_ICON_CLASS} />,
+        keepOpen: true,
+        run: async () => {
+          await startAddProjectBrowse(environmentId, "folders");
         },
       },
     ];
@@ -1644,12 +1688,12 @@ function OpenCommandPaletteDialog(props: {
     now: searchNow,
   });
 
-  const handleAddProjectForEnvironment = async (input: {
+  const resolveAddProjectCwd = (input: {
     readonly environmentId: EnvironmentId;
     readonly rawCwd: string;
     readonly platform: string;
     readonly currentProjectCwd: string | null;
-  }) => {
+  }): string | null => {
     const environment = environments.find(
       (candidate) => candidate.environmentId === input.environmentId,
     );
@@ -1661,7 +1705,7 @@ function OpenCommandPaletteDialog(props: {
           description: `${environment?.label ?? "The selected environment"} is not connected.`,
         }),
       );
-      return;
+      return null;
     }
     const rawCwd = input.rawCwd;
 
@@ -1673,7 +1717,7 @@ function OpenCommandPaletteDialog(props: {
           description: "Windows-style paths are only supported on Windows.",
         }),
       );
-      return;
+      return null;
     }
 
     if (isExplicitRelativeProjectPath(rawCwd.trim()) && !input.currentProjectCwd) {
@@ -1684,49 +1728,20 @@ function OpenCommandPaletteDialog(props: {
           description: "Relative paths require an active project.",
         }),
       );
-      return;
+      return null;
     }
 
     const cwd = resolveProjectPathForDispatch(rawCwd, input.currentProjectCwd);
-    if (cwd.length === 0) return;
+    return cwd.length === 0 ? null : cwd;
+  };
 
-    const existing = findProjectByPath(
-      projects.filter((project) => project.environmentId === input.environmentId),
-      cwd,
-    );
-    if (existing) {
-      const latestThread = getLatestThreadForProject(
-        threads.filter((thread) => thread.environmentId === existing.environmentId),
-        existing.id,
-        clientSettings.sidebarThreadSortOrder,
-      );
-      if (latestThread && latestThread.settledOverride !== "settled") {
-        await navigate({
-          to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(
-            scopeThreadRef(latestThread.environmentId, latestThread.id),
-          ),
-        });
-      } else {
-        const navigationResult = await settlePromise(() =>
-          handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
-        );
-        if (navigationResult._tag === "Failure") {
-          const error = squashAtomCommandFailure(navigationResult);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to open project",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-          return;
-        }
-      }
-      setOpen(false);
-      return;
-    }
-
+  const createAndOpenProject = async (input: {
+    readonly environmentId: EnvironmentId;
+    readonly workspaceRoot: string;
+    readonly additionalWorkspaceRoots: ReadonlyArray<string>;
+    readonly createWorkspaceRootIfMissing: boolean;
+    readonly title?: string;
+  }): Promise<void> => {
     if (!readEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope)) {
       toastManager.add(
         stackedThreadToast({
@@ -1742,9 +1757,12 @@ function OpenCommandPaletteDialog(props: {
       environmentId: input.environmentId,
       input: {
         projectId,
-        title: inferProjectTitleFromPath(cwd),
-        workspaceRoot: cwd,
-        createWorkspaceRootIfMissing: true,
+        title: input.title ?? inferProjectTitleFromPath(input.workspaceRoot),
+        workspaceRoot: input.workspaceRoot,
+        createWorkspaceRootIfMissing: input.createWorkspaceRootIfMissing,
+        ...(input.additionalWorkspaceRoots.length > 0
+          ? { additionalWorkspaceRoots: input.additionalWorkspaceRoots }
+          : {}),
         defaultModelSelection: null,
       },
     });
@@ -1779,6 +1797,61 @@ function OpenCommandPaletteDialog(props: {
     setOpen(false);
   };
 
+  const handleAddProjectForEnvironment = async (input: {
+    readonly environmentId: EnvironmentId;
+    readonly rawCwd: string;
+    readonly platform: string;
+    readonly currentProjectCwd: string | null;
+  }) => {
+    const cwd = resolveAddProjectCwd(input);
+    if (cwd === null) return;
+
+    const existing = findExistingAddProject({
+      projects,
+      environmentId: input.environmentId,
+      path: cwd,
+    });
+    if (existing) {
+      const latestThread = getLatestThreadForProject(
+        threads.filter((thread) => thread.environmentId === existing.environmentId),
+        existing.id,
+        clientSettings.sidebarThreadSortOrder,
+      );
+      if (latestThread && latestThread.settledOverride !== "settled") {
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(
+            scopeThreadRef(latestThread.environmentId, latestThread.id),
+          ),
+        });
+      } else {
+        const navigationResult = await settlePromise(() =>
+          handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
+        );
+        if (navigationResult._tag === "Failure") {
+          const error = squashAtomCommandFailure(navigationResult);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to open project",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+          return;
+        }
+      }
+      setOpen(false);
+      return;
+    }
+
+    await createAndOpenProject({
+      environmentId: input.environmentId,
+      workspaceRoot: cwd,
+      additionalWorkspaceRoots: [],
+      createWorkspaceRootIfMissing: true,
+    });
+  };
+
   const handleAddProject = async (rawCwd: string) => {
     if (!browseEnvironmentId) return;
     await handleAddProjectForEnvironment({
@@ -1788,6 +1861,67 @@ function OpenCommandPaletteDialog(props: {
       currentProjectCwd: currentProjectCwdForBrowse,
     });
   };
+
+  const addProjectFolder = (rawCwd: string, platform: string = browseEnvironmentPlatform) => {
+    if (addProjectFoldersFlow === null) return;
+    const cwd = resolveAddProjectCwd({
+      environmentId: addProjectFoldersFlow.environmentId,
+      rawCwd,
+      platform,
+      currentProjectCwd: currentProjectCwdForBrowse,
+    });
+    if (cwd === null) return;
+    const result = appendProjectFolder(addProjectFoldersFlow.folders, cwd);
+    if (result.status === "full") {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Too many folders",
+          description: `A project can have up to ${MAX_PROJECT_FOLDERS} folders.`,
+        }),
+      );
+      return;
+    }
+    setAddProjectFoldersFlow({ ...addProjectFoldersFlow, folders: result.folders });
+  };
+
+  const submitBrowsePath = (rawCwd: string) => {
+    if (addProjectFoldersFlow !== null) {
+      addProjectFolder(rawCwd);
+      return;
+    }
+    void handleAddProject(rawCwd);
+  };
+
+  const submitFoldersProject = useStableCallback(async () => {
+    if (
+      addProjectFoldersFlow === null ||
+      addProjectFoldersFlow.folders.length === 0 ||
+      foldersProjectSubmittingRef.current
+    ) {
+      return;
+    }
+    const [workspaceRoot = "", ...additionalWorkspaceRoots] = addProjectFoldersFlow.folders;
+    foldersProjectSubmittingRef.current = true;
+    setIsCreatingFoldersProject(true);
+    try {
+      await createAndOpenProject({
+        environmentId: addProjectFoldersFlow.environmentId,
+        workspaceRoot,
+        additionalWorkspaceRoots,
+        createWorkspaceRootIfMissing: false,
+        title: uniqueProjectTitle(
+          inferProjectTitleFromPath(workspaceRoot),
+          projects
+            .filter((project) => project.environmentId === addProjectFoldersFlow.environmentId)
+            .map((project) => project.title),
+        ),
+      });
+    } finally {
+      foldersProjectSubmittingRef.current = false;
+      setIsCreatingFoldersProject(false);
+    }
+  });
 
   const newProjectPublishTargets =
     newProjectFlow === null ? [] : getNewProjectPublishTargets(sourceControlDiscovery.data ?? null);
@@ -2051,6 +2185,47 @@ function OpenCommandPaletteDialog(props: {
     browseUp,
     browseTo,
   });
+  const selectedFoldersGroup: CommandPaletteView["groups"][number] | null =
+    addProjectFoldersFlow === null || addProjectFoldersFlow.folders.length === 0
+      ? null
+      : {
+          value: "selected-folders",
+          label: "Selected folders",
+          items: [
+            ...addProjectFoldersFlow.folders.map((folder, index): CommandPaletteActionItem => ({
+              kind: "action",
+              value: `folders:remove:${folder}`,
+              searchTerms: [folder],
+              title: folder,
+              description: index === 0 ? "Working folder · select to remove" : "Select to remove",
+              icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+              titleTrailingContent: (
+                <XIcon className="ms-auto size-4 shrink-0 text-muted-foreground/70" />
+              ),
+              ...(isCreatingFoldersProject ? { disabled: true } : {}),
+              keepOpen: true,
+              run: async () => {
+                setAddProjectFoldersFlow((flow) =>
+                  flow === null
+                    ? flow
+                    : { ...flow, folders: flow.folders.filter((entry) => entry !== folder) },
+                );
+              },
+            })),
+            {
+              kind: "action",
+              value: "folders:create",
+              searchTerms: [],
+              title: `Create project with ${addProjectFoldersFlow.folders.length} ${addProjectFoldersFlow.folders.length === 1 ? "folder" : "folders"}`,
+              icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+              ...(isCreatingFoldersProject ? { disabled: true } : {}),
+              keepOpen: true,
+              run: async () => {
+                await submitFoldersProject();
+              },
+            },
+          ],
+        };
   const cloneDestinationBrowseGroups = browseGroups.map((group) =>
     group.value === "directories" ? { ...group, label: "Select where to clone" } : group,
   );
@@ -2195,7 +2370,9 @@ function OpenCommandPaletteDialog(props: {
   } else if (addProjectCloneFlow?.step === "confirm") {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
   } else if (isBrowsing) {
-    displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
+    displayedGroups = relativePathNeedsActiveProject
+      ? []
+      : [...(selectedFoldersGroup ? [selectedFoldersGroup] : []), ...browseGroups];
   }
   const resultRows = buildCommandPaletteRows(displayedGroups);
   const autoHighlightsFirstRow =
@@ -2207,7 +2384,9 @@ function OpenCommandPaletteDialog(props: {
       : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
         getCommandPaletteInputPlaceholder(paletteMode));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
-  const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
+  const hasHighlightedBrowseItem =
+    (highlightedItemValue?.startsWith("browse:") || highlightedItemValue?.startsWith("folders:")) ??
+    false;
   const canWriteSourceControl = useEnvironmentScope(
     addProjectCloneFlow?.environmentId ?? null,
     AuthSourceControlWriteScope,
@@ -2224,22 +2403,30 @@ function OpenCommandPaletteDialog(props: {
     canCreateProject &&
     (!isCloneDestinationStep || canCloneProject) &&
     canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
-  const willCreateProjectPath =
+  const isBrowsePathMissing =
     canSubmitBrowsePath &&
     !isBrowsePending &&
     browseAccessError === null &&
     query.trim().length > 0 &&
     !hasHighlightedBrowseItem &&
     (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
+  const isFoldersFlow = addProjectFoldersFlow !== null;
+  const isFoldersCreateHighlighted = highlightedItemValue === "folders:create";
+  // A folders project only lists folders that already exist.
+  const willCreateProjectPath = isBrowsePathMissing && !isFoldersFlow;
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
   const submitActionLabel = isCloneDestinationStep
     ? willCreateProjectPath
       ? "Create & Clone"
       : "Clone"
-    : willCreateProjectPath
-      ? "Create & Add"
-      : "Add";
+    : isFoldersFlow
+      ? isFoldersCreateHighlighted
+        ? "Create project"
+        : "Add folder"
+      : willCreateProjectPath
+        ? "Create & Add"
+        : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
   const hasHighlightedNewProjectItem = newProjectFlow !== null && highlightedItemValue !== null;
   const createShortcutLabel = hasHighlightedNewProjectItem
@@ -2367,13 +2554,15 @@ function OpenCommandPaletteDialog(props: {
       event.preventDefault();
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
-      } else {
-        void handleAddProject(resolvedAddProjectPath);
+      } else if (isFoldersCreateHighlighted) {
+        void submitFoldersProject();
+      } else if (!(isFoldersFlow && isBrowsePathMissing)) {
+        submitBrowsePath(resolvedAddProjectPath);
       }
       return;
     }
 
-    if (event.key === "Backspace" && query === "" && isSubmenu) {
+    if (event.key === "Backspace" && query === "" && isSubmenu && !hasPickedFolders) {
       event.preventDefault();
       popView();
       return;
@@ -2520,12 +2709,30 @@ function OpenCommandPaletteDialog(props: {
         );
         return;
       }
+      if (addProjectFoldersFlow !== null) {
+        if (selection.environmentId === addProjectFoldersFlow.environmentId) {
+          addProjectFolder(selection.linuxPath, "Linux");
+        } else {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not add folder",
+              description: "Choose a folder on the same machine as the other folders.",
+            }),
+          );
+        }
+        return;
+      }
       await handleAddProjectForEnvironment({
         environmentId: selection.environmentId,
         rawCwd: selection.linuxPath,
         platform: "Linux",
         currentProjectCwd: null,
       });
+      return;
+    }
+    if (addProjectFoldersFlow !== null) {
+      addProjectFolder(pickedPath);
       return;
     }
     await handleAddProject(pickedPath);
@@ -2570,6 +2777,7 @@ function OpenCommandPaletteDialog(props: {
           !canCreateProject ||
           !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
           relativePathNeedsActiveProject ||
+          (isFoldersFlow && isBrowsePathMissing) ||
           (isCloneDestinationStep && (!canCloneProject || isRemoteProjectPending))
         }
         onSubmit={() => {
@@ -2578,8 +2786,10 @@ function OpenCommandPaletteDialog(props: {
           }
           if (isCloneDestinationStep) {
             void submitAddProjectCloneFlow(resolvedAddProjectPath);
+          } else if (isFoldersCreateHighlighted) {
+            void submitFoldersProject();
           } else {
-            void handleAddProject(resolvedAddProjectPath);
+            submitBrowsePath(resolvedAddProjectPath);
           }
         }}
       />

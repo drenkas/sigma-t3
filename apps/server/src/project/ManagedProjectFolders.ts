@@ -271,17 +271,7 @@ const make = Effect.gen(function* () {
           title: "No project",
           workspaceRoot,
         })
-        .pipe(
-          // bootstrap reads before locking; racing creates return the winner in a conflict.
-          Effect.catchTags({
-            ProjectConflictError: (conflict) =>
-              Effect.succeed({
-                project: { id: conflict.conflictingProjectId },
-                created: false,
-              }),
-          }),
-          Effect.mapError((cause) => new ScratchProjectError({ workspaceRoot, cause })),
-        );
+        .pipe(Effect.mapError((cause) => new ScratchProjectError({ workspaceRoot, cause })));
       if (bootstrapped.created) {
         // Set once at create, so a user's own icon choice is never overwritten.
         yield* projects
@@ -440,14 +430,12 @@ const make = Effect.gen(function* () {
         workspaceRoot,
       })
       .pipe(
-        // Re-check ownership before deleting rejected creations; interruption after commit or conflicts can leave an owner.
-        Effect.tapError((error) =>
-          error._tag === "ProjectConflictError"
-            ? Effect.void
-            : projects.getByWorkspaceRoot(workspaceRoot).pipe(
-                Effect.flatMap((owner) => (Option.isNone(owner) ? removeFolder : Effect.void)),
-                Effect.ignore,
-              ),
+        // Re-check ownership before deleting rejected creations; interruption after commit can leave an owner.
+        Effect.tapError(() =>
+          projects.getByWorkspaceRoot(workspaceRoot).pipe(
+            Effect.flatMap((owner) => (Option.isNone(owner) ? removeFolder : Effect.void)),
+            Effect.ignore,
+          ),
         ),
         Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause })),
       );

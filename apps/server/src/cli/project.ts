@@ -144,6 +144,20 @@ export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundErro
   }
 }
 
+export class ProjectAmbiguousError extends Schema.TaggedError<ProjectAmbiguousError>()(
+  "ProjectAmbiguousError",
+  {
+    operation: Schema.Literal("resolveProjectTarget"),
+    identifier: Schema.String,
+    matches: Schema.Array(Schema.Struct({ id: ProjectId, title: Schema.String })),
+  },
+) {
+  override get message(): string {
+    const listed = this.matches.map((match) => `${match.id} (${match.title})`).join(", ");
+    return `Several active projects use '${this.identifier}': ${listed}. Pass a project id instead.`;
+  }
+}
+
 export class ProjectAlreadyExistsError extends Schema.TaggedError<ProjectAlreadyExistsError>()(
   "ProjectAlreadyExistsError",
   {
@@ -165,6 +179,7 @@ export const ProjectCommandError = Schema.Union([
   ProjectTitleEmptyError,
   ProjectIdentifierEmptyError,
   ProjectNotFoundError,
+  ProjectAmbiguousError,
   ProjectAlreadyExistsError,
 ]);
 export type ProjectCommandError = typeof ProjectCommandError.Type;
@@ -292,11 +307,18 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
     normalizedWorkspaceRootResult._tag === "Success" ? normalizedWorkspaceRootResult.success : null;
 
   // A stored workspace path still identifies its project after the directory is gone.
-  const exactWorkspaceMatch = activeProjects.find(
+  const workspaceMatches = activeProjects.filter(
     (project) => project.workspaceRoot === (normalizedWorkspaceRoot ?? trimmedIdentifier),
   );
+  if (workspaceMatches.length > 1) {
+    return yield* new ProjectAmbiguousError({
+      operation: "resolveProjectTarget",
+      identifier: trimmedIdentifier,
+      matches: workspaceMatches.map(({ id, title }) => ({ id, title })),
+    });
+  }
 
-  const resolved = exactWorkspaceMatch;
+  const resolved = workspaceMatches[0];
   if (!resolved) {
     return yield* new ProjectNotFoundError({
       operation: "resolveProjectTarget",
@@ -476,7 +498,10 @@ const projectAddCommand = Command.make("add", {
       }) {
         const workspaceRoot = yield* normalizeWorkspaceRootForProjectCommand(flags.workspaceRoot);
         const existingProject = snapshot.projects.find(
-          (project) => project.deletedAt === null && project.workspaceRoot === workspaceRoot,
+          (project) =>
+            project.deletedAt === null &&
+            project.workspaceRoot === workspaceRoot &&
+            (project.additionalWorkspaceRoots ?? []).length === 0,
         );
         if (existingProject) {
           return yield* new ProjectAlreadyExistsError({

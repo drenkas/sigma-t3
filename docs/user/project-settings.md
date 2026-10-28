@@ -229,6 +229,13 @@ project, open Project, and under **Folders** choose **Add folders** or drop fold
 Explorer onto the list. This works in the desktop app for projects on its own machine. New turns
 in any of the project's threads can read and edit every folder.
 
+You can also create a project from one or several folders: open the command palette, choose
+**Add project**, then **Folders** (the mobile app's Add project screen has the same option), and
+pick each folder in turn. The first folder becomes the
+working folder. The same folders can belong to any number of projects, for example one per task to
+keep the work apart. A project created on folders another project already uses gets a numbered name
+such as `app 2`, which you can rename in Project settings.
+
 The project's own folder stays the agent's working directory. Diffs, checkpoints, worktrees and
 the thread's branch only cover that folder. In the thread's details panel each other folder has its
 own branch picker and Commit, Push and Pull. Push reads Publish while the branch is not on the

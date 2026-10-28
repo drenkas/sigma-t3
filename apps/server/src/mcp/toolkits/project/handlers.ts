@@ -31,9 +31,7 @@ function projectFailure(error: Project.ProjectServiceError) {
   const message =
     error._tag === "ProjectNotFoundError"
       ? "The project was not found."
-      : error._tag === "ProjectConflictError"
-        ? "The workspace is already registered to a project."
-        : "The project is not empty; force=true is required to delete it.";
+      : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 
@@ -272,20 +270,21 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
     }),
   ),
   t3_project_create: McpToolAccess.writesEnvironment(
-    ({ workspaceRoot, ...input }) =>
+    ({ workspaceRoot, allowDuplicate, ...input }) =>
       Effect.gen(function* () {
         const projects = yield* Project.ProjectService;
         if (workspaceRoot === undefined) {
           // Only updates record model defaults; reject defaults that creation would silently drop.
           if (
             input.scripts !== undefined ||
+            input.additionalWorkspaceRoots !== undefined ||
             input.createWorkspaceRootIfMissing !== undefined ||
             input.defaultModelSelection !== undefined
           )
             return yield* new OrchestratorMcpFailure({
               code: "invalid_request",
               message:
-                "A project started from its title takes only a title; set scripts or defaultModelSelection afterwards with t3_project_update.",
+                "A project started from its title takes only a title; set scripts, additionalWorkspaceRoots or defaultModelSelection afterwards with t3_project_update.",
             });
           const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
           const created = yield* folders.createNamedProject({ name: input.title }).pipe(
@@ -310,13 +309,27 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
           };
         }
+        if (allowDuplicate !== true) {
+          const duplicate = yield* projects
+            .findActiveByFolders({
+              workspaceRoot,
+              ...(input.additionalWorkspaceRoots === undefined
+                ? {}
+                : { additionalWorkspaceRoots: input.additionalWorkspaceRoots }),
+            })
+            .pipe(Effect.mapError(unavailable));
+          if (Option.isSome(duplicate))
+            return yield* new OrchestratorMcpFailure({
+              code: "invalid_request",
+              message: `Project "${duplicate.value.title}" (${duplicate.value.id}) already has these folders. Use it, or pass allowDuplicate: true to create another.`,
+            });
+        }
         const commandId = yield* newCommandId();
         return yield* projects
           .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
           .pipe(Effect.mapError(projectFailure));
       }),
-    // Linked work may bring the repository it works in; an existing
-    // registered workspace is still refused.
+    // Linked work may bring the repository it works in.
     { linkedCallers: "allowed" },
   ),
   t3_project_update: McpToolAccess.writesEnvironment((input) =>

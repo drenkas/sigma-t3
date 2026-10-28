@@ -227,8 +227,8 @@ describe("buildProjectGroups", () => {
       expect(groups).toHaveLength(3);
       const scratch = groups.find((group) => group.representative.isScratch)!;
       expect(scratch.label).toBe("No project");
-      expect(scratch.representative.id).toBe(projects[2]?.id);
-      expect(scratch.members).toHaveLength(2);
+      expect(scratch.representative.id).toBe(projects[1]?.id);
+      expect(scratch.members).toHaveLength(3);
       expect(scratch.memberProjectRefs).toEqual(
         projects.slice(0, 3).map((project) => ({
           environmentId: project.environmentId,
@@ -307,75 +307,118 @@ describe("buildProjectGroups", () => {
     ]);
   });
 
-  it("dedupes stale registrations at one physical path using the freshest project", () => {
-    const stale = makeProject("stale", "/work/t3code", {
-      repositoryIdentity: null,
-      updatedAt: "2026-07-01T00:00:00.000Z",
-    });
-    const fresh = makeProject("fresh", "/work/t3code/", {
-      updatedAt: "2026-07-02T00:00:00.000Z",
-    });
+  it.each(["repository", "repository_path", "separate"] as const)(
+    "keeps every project on one folder as its own row in %s mode",
+    (mode) => {
+      const first = makeProject("first", "/work/t3code");
+      const second = makeProject("second", "/work/t3code/");
+      const third = makeProject("third", "/work/t3code");
+      const sibling = makeProject("sibling", "/work/t3code-2");
 
-    const groups = buildProjectGroups({
-      projects: [stale, fresh],
-      settings: settings("repository"),
-    });
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.members).toHaveLength(1);
-    expect(groups[0]?.representative.id).toBe("fresh");
-    expect(groups[0]?.memberProjectRefs).toHaveLength(2);
-  });
+      const groups = buildProjectGroups({
+        projects: [first, second, third, sibling],
+        settings: settings(mode),
+      });
+      const members = groups.flatMap((group) => group.members);
+      expect(new Set(members.map((member) => member.physicalProjectKey)).size).toBe(4);
+      expect(new Set(groups.map((group) => group.key)).size).toBe(groups.length);
+      for (const id of ["second", "third"]) {
+        const group = groups.find((candidate) => candidate.memberProjectRefs[0]?.projectId === id);
+        expect(group?.members.map((member) => member.project.id)).toEqual([id]);
+      }
+      const original = groups.find((group) =>
+        group.members.some((member) => member.project.id === "first"),
+      );
+      expect(original?.members.map((member) => member.project.id)).not.toContain("second");
+      expect(original?.members.map((member) => member.project.id)).not.toContain("third");
+    },
+  );
 
-  it("uses the freshest winner's repository identity when stale duplicates disagree", () => {
-    const staleIdentity = {
-      ...repositoryIdentity,
-      canonicalKey: "github.com/t3tools/old-repository",
-      name: "old-repository",
-      displayName: "Old Repository",
-    };
-    const stale = makeProject("stale", "/work/t3code", {
-      repositoryIdentity: staleIdentity,
-      updatedAt: "2026-07-01T00:00:00.000Z",
-    });
-    const fresh = makeProject("fresh", "/work/t3code/", {
-      updatedAt: "2026-07-02T00:00:00.000Z",
+  it("keeps a same-folder duplicate out of the original's group and apart from a sibling checkout", () => {
+    const first = makeProject("first", "/work/t3code");
+    const duplicate = makeProject("duplicate", "/work/t3code/", {
+      createdAt: "2026-07-02T00:00:00.000Z",
     });
     const sibling = makeProject("sibling", "/work/t3code-2");
 
     const groups = buildProjectGroups({
-      projects: [stale, fresh, sibling],
+      projects: [first, duplicate, sibling],
       settings: settings("repository"),
     });
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["fresh", "sibling"]);
+    expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
+      ["first", "sibling"],
+      ["duplicate"],
+    ]);
+    expect(groups[1]?.key).toBe("github.com/t3tools/t3code@duplicate");
   });
 
-  it("uses the freshest identity-bearing duplicate when the winner lacks identity", () => {
-    const staleIdentity = {
-      ...repositoryIdentity,
-      canonicalKey: "github.com/t3tools/old-repository",
-      name: "old-repository",
-      displayName: "Old Repository",
-    };
-    const staleIdentified = makeProject("stale-identified", "/work/t3code", {
-      repositoryIdentity: staleIdentity,
-      updatedAt: "2026-07-01T00:00:00.000Z",
-    });
-    const freshIdentified = makeProject("fresh-identified", "/work/t3code/", {
-      updatedAt: "2026-07-02T00:00:00.000Z",
-    });
-    const winner = makeProject("winner", "/work/t3code", {
+  it("lets the oldest project on a folder keep its plain key when a duplicate appears", () => {
+    const original = makeProject("zzz-original", "/work/app", {
       repositoryIdentity: null,
-      updatedAt: "2026-07-03T00:00:00.000Z",
+      createdAt: "2026-06-01T00:00:00.000Z",
     });
+    const duplicate = makeProject("aaa-duplicate", "/work/app", {
+      repositoryIdentity: null,
+      createdAt: "2026-07-01T00:00:00.000Z",
+    });
+    const tiedA = makeProject("tie-a", "/work/tied", { repositoryIdentity: null });
+    const tiedB = makeProject("tie-b", "/work/tied", { repositoryIdentity: null });
+
+    const groups = buildProjectGroups({
+      projects: [duplicate, original, tiedB, tiedA],
+      settings: settings("repository"),
+    });
+    const keyOf = (id: string) =>
+      groups.flatMap((group) => group.members).find((member) => member.project.id === id)
+        ?.physicalProjectKey;
+    expect(keyOf("zzz-original")).toBe("environment:/work/app");
+    expect(keyOf("aaa-duplicate")).toBe("environment:/work/app@aaa-duplicate");
+    expect(keyOf("tie-a")).toBe("environment:/work/tied");
+    expect(keyOf("tie-b")).toBe("environment:/work/tied@tie-b");
+    expect(groups.find((group) => group.members[0]?.project.id === "zzz-original")?.key).toBe(
+      "environment:/work/app",
+    );
+  });
+
+  it("resolves a duplicate's own logical key from a single project when its siblings are given", () => {
+    const original = makeProject("original", "/work/t3code");
+    const duplicate = makeProject("duplicate", "/work/t3code", {
+      createdAt: "2026-07-02T00:00:00.000Z",
+    });
+    const projects = [original, duplicate];
+    const groupingSettings = settings("repository");
+    const groups = buildProjectGroups({ projects, settings: groupingSettings });
+
+    expect(deriveLogicalProjectKeyFromSettings(original, groupingSettings, { projects })).toBe(
+      groups[0]?.key,
+    );
+    expect(deriveLogicalProjectKeyFromSettings(duplicate, groupingSettings, { projects })).toBe(
+      groups[1]?.key,
+    );
+    expect(resolveScratchProjectScopeKey(groups[1]!.key, projects, groupingSettings)).toBe(
+      groups[1]!.key,
+    );
+  });
+
+  it("groups same-folder projects by their own repository identity", () => {
+    const otherIdentity = {
+      ...repositoryIdentity,
+      canonicalKey: "github.com/t3tools/other-repository",
+      name: "other-repository",
+      displayName: "Other Repository",
+    };
+    const first = makeProject("first", "/work/t3code");
+    const second = makeProject("second", "/work/t3code/", { repositoryIdentity: otherIdentity });
     const sibling = makeProject("sibling", "/work/t3code-2");
 
     const groups = buildProjectGroups({
-      projects: [staleIdentified, freshIdentified, winner, sibling],
+      projects: [first, second, sibling],
       settings: settings("repository"),
     });
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["winner", "sibling"]);
+    expect(groups.map((group) => group.members.map((member) => member.project.id))).toEqual([
+      ["first", "sibling"],
+      ["second"],
+    ]);
   });
 });
 

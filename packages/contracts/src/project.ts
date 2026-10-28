@@ -184,6 +184,7 @@ export type ProjectSnapshot = typeof ProjectSnapshot.Type;
 export const ProjectCreatePayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),

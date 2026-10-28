@@ -46,6 +46,7 @@ export interface CreateProjectInput extends CommandMetadata {
   readonly title: string;
   readonly workspaceRoot: string;
   readonly createWorkspaceRootIfMissing?: boolean;
+  readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
 }
@@ -307,6 +308,7 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly title: string;
         readonly workspaceRoot: string;
         readonly createWorkspaceRootIfMissing?: boolean;
+        readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
         readonly defaultModelSelection?: ModelSelection | null;
         readonly scripts?: ReadonlyArray<ProjectScript>;
       }
@@ -341,6 +343,9 @@ export const createProject = Effect.fn("EnvironmentCommands.createProject")(func
     ...(input.createWorkspaceRootIfMissing === undefined
       ? {}
       : { createWorkspaceRootIfMissing: input.createWorkspaceRootIfMissing }),
+    ...(input.additionalWorkspaceRoots === undefined
+      ? {}
+      : { additionalWorkspaceRoots: input.additionalWorkspaceRoots }),
     ...(input.defaultModelSelection === undefined
       ? {}
       : { defaultModelSelection: input.defaultModelSelection }),

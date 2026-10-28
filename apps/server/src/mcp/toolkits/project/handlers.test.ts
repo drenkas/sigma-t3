@@ -42,6 +42,7 @@ const clientLaunchHarness = (input: {
   readonly launched: Array<ThreadLaunch.ThreadLaunchInput>;
   readonly workspaceRoot?: string;
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
+  readonly projectService?: Partial<Project.ProjectService["Service"]>;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -125,6 +126,7 @@ const clientLaunchHarness = (input: {
               } as unknown as ProjectRecord)
             : Option.none(),
         ),
+      ...input.projectService,
     }),
     Layer.mock(PeerForwarding.PeerForwarding)({}),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
@@ -461,5 +463,73 @@ it.effect("a retried worktree launch replays after its base ref is gone", () =>
       launched[0]?.threadId,
       launched[0]?.threadId,
     ]);
+  }),
+);
+
+it.effect("project create rejects folders a project already has unless allowDuplicate is set", () =>
+  Effect.gen(function* () {
+    const existing = {
+      id: ProjectId.make("project:existing"),
+      title: "Existing",
+      workspaceRoot: "/work/again",
+      additionalWorkspaceRoots: ["/work/docs", "/work/api"],
+      repositoryIdentity: null,
+      faviconPath: null,
+      defaultModelSelection: null,
+      defaultThreadEnvMode: null,
+      autoPull: false,
+      projectIcon: null,
+      scripts: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      deletedAt: null,
+    } satisfies ProjectRecord;
+    const lookups: Array<unknown> = [];
+    const created: Array<unknown> = [];
+    const { dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched: [],
+      projectService: {
+        findActiveByFolders: (folders) => {
+          lookups.push(folders);
+          return Effect.succeedSome(existing);
+        },
+        create: (input) => {
+          created.push(input);
+          return Effect.succeed({ ...existing, id: input.projectId });
+        },
+      },
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const create = (allowDuplicate?: boolean) =>
+      toolkit
+        .handle("t3_project_create", {
+          title: "Again",
+          workspaceRoot: "/work/again",
+          additionalWorkspaceRoots: ["/work/docs", "/work/api"],
+          ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
+        })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+
+    for (const rejected of [yield* create(), yield* create(false)]) {
+      expect(rejected.at(-1)?.result).toMatchObject({
+        code: "invalid_request",
+        message: expect.stringContaining('"Existing" (project:existing)'),
+      });
+    }
+    expect(created).toEqual([]);
+    expect(lookups[0]).toEqual({
+      workspaceRoot: "/work/again",
+      additionalWorkspaceRoots: ["/work/docs", "/work/api"],
+    });
+
+    const allowed = yield* create(true);
+    expect(allowed.at(-1)?.result).toMatchObject({ title: "Existing" });
+    expect(created).toHaveLength(1);
+    expect(lookups).toHaveLength(2);
   }),
 );

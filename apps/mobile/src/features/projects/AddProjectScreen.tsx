@@ -7,6 +7,7 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { Button } from "../../components/ui/Button";
 import {
+  appendProjectFolder,
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
@@ -23,9 +24,11 @@ import {
   getNewProjectPublishTarget,
   getNewProjectPublishTargets,
   getNewProjectRepository,
+  MAX_PROJECT_FOLDERS,
   defaultHostCloneUrl,
   normalizePastedCloneUrl,
   parseAddProjectRemoteSource,
+  uniqueProjectTitle,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
@@ -637,6 +640,32 @@ export function AddProjectSourceScreen(props: { readonly environmentId?: string 
                 )
               }
             />
+            <ListRow
+              title="Folders"
+              subtitle={
+                canCreateProject
+                  ? "Pick several folders for one project"
+                  : "This connection cannot add projects."
+              }
+              icon={
+                <SymbolView
+                  name="folder.fill"
+                  size={Platform.OS === "android" ? 24 : 17}
+                  tintColorClassName="accent-icon"
+                  type="monochrome"
+                />
+              }
+              isFirst={false}
+              disabled={!canCreateProject}
+              onPress={() =>
+                navigation.dispatch(
+                  StackActions.push("AddProjectLocal", {
+                    environmentId: selectedEnvironment.environmentId,
+                    mode: "folders",
+                  }),
+                )
+              }
+            />
             {(["url", ...sortAddProjectProviderSources(readiness)] as AddProjectRemoteSource[]).map(
               (candidate) => (
                 <SourceControlRow
@@ -715,7 +744,8 @@ function useCreateProject(environment: EnvironmentOption | null) {
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const projects = useProjects();
 
-  return async (workspaceRoot: string, originRoute = getActiveRoute(navigation)) => {
+  return async (workspaceRoot: string, additionalWorkspaceRoots?: ReadonlyArray<string>) => {
+    const originRoute = getActiveRoute(navigation);
     if (
       !environment ||
       !canCreateProjectInEnvironment(environment.connectionState) ||
@@ -728,11 +758,13 @@ function useCreateProject(environment: EnvironmentOption | null) {
       return;
     }
 
-    const existing = findExistingAddProject({
-      projects,
-      environmentId: environment.environmentId,
-      path: workspaceRoot,
-    });
+    const existing = additionalWorkspaceRoots
+      ? null
+      : findExistingAddProject({
+          projects,
+          environmentId: environment.environmentId,
+          path: workspaceRoot,
+        });
     if (existing) {
       Dialog.alert("Project already exists", existing.title);
       openNewTaskDraft(
@@ -752,9 +784,19 @@ function useCreateProject(environment: EnvironmentOption | null) {
       projectId,
       workspaceRoot,
     });
+    const title = additionalWorkspaceRoots
+      ? uniqueProjectTitle(
+          command.title,
+          projects
+            .filter((project) => project.environmentId === environment.environmentId)
+            .map((project) => project.title),
+        )
+      : command.title;
     const result = await createProject({
       environmentId: environment.environmentId,
-      input: command,
+      input: additionalWorkspaceRoots
+        ? { ...command, title, additionalWorkspaceRoots, createWorkspaceRootIfMissing: false }
+        : command,
     });
     if (AsyncResult.isFailure(result)) {
       return result;
@@ -776,7 +818,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
       {
         environmentId: environment.environmentId,
         projectId,
-        title: inferProjectTitleFromPath(workspaceRoot),
+        title,
       },
       originRoute,
     );
@@ -1253,7 +1295,11 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
   );
 }
 
-export function AddProjectLocalFolderScreen(props: { readonly environmentId?: string | string[] }) {
+export function AddProjectLocalFolderScreen(props: {
+  readonly environmentId?: string | string[];
+  readonly mode?: string | string[];
+}) {
+  const foldersMode = stringParam(props.mode) === "folders";
   const environment = useEnvironmentFromParam(props.environmentId);
   const canCreateProject = useEnvironmentScope(
     environment?.environmentId ?? null,
@@ -1264,6 +1310,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     useBrowsePathInput(environment);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [folders, setFolders] = useState<ReadonlyArray<string>>([]);
 
   const submitPath = async () => {
     if (!environment || isBrowseNavigating || isSubmitting) return;
@@ -1278,6 +1325,18 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
       return;
     }
 
+    if (foldersMode) {
+      const appended = appendProjectFolder(folders, resolved.path);
+      if (appended.status === "full") {
+        Dialog.alert(
+          "Folder limit reached",
+          `A project can have up to ${MAX_PROJECT_FOLDERS} folders.`,
+        );
+      }
+      setFolders(appended.folders);
+      return;
+    }
+
     setIsSubmitting(true);
     const result = await createProject(resolved.path);
     if (result && AsyncResult.isFailure(result)) {
@@ -1286,8 +1345,20 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     setIsSubmitting(false);
   };
 
+  const submitFolders = async () => {
+    const [workingFolder, ...additionalFolders] = folders;
+    if (workingFolder === undefined || isSubmitting) return;
+    setError(null);
+    setIsSubmitting(true);
+    const result = await createProject(workingFolder, additionalFolders);
+    if (result && AsyncResult.isFailure(result)) {
+      setError(errorMessage(Cause.squash(result.cause)));
+    }
+    setIsSubmitting(false);
+  };
+
   return (
-    <AddProjectShell title="Local folder">
+    <AddProjectShell title={foldersMode ? "Folders" : "Local folder"}>
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
@@ -1295,11 +1366,52 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
             <ErrorBanner message="This connection cannot add projects." />
           ) : null}
           <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
+          {foldersMode && folders.length > 0 ? (
+            <>
+              <SectionTitle>Project folders</SectionTitle>
+              <ListSection>
+                {folders.map((folder, index) => (
+                  <ListRow
+                    key={folder}
+                    title={folder}
+                    subtitle={index === 0 ? "Working folder" : null}
+                    icon={
+                      <SymbolView
+                        name="folder"
+                        size={Platform.OS === "android" ? 24 : 17}
+                        tintColorClassName="accent-icon-muted"
+                        type="monochrome"
+                      />
+                    }
+                    isFirst={index === 0}
+                    disabled={isSubmitting}
+                    right={
+                      <SymbolView
+                        name="xmark"
+                        size={Platform.OS === "android" ? 20 : 14}
+                        tintColorClassName="accent-icon-muted"
+                        type="monochrome"
+                      />
+                    }
+                    onPress={() =>
+                      setFolders((current) => current.filter((existing) => existing !== folder))
+                    }
+                  />
+                ))}
+              </ListSection>
+              <PrimaryActionButton
+                label={`Create project with ${folders.length} ${folders.length === 1 ? "folder" : "folders"}`}
+                disabled={!canCreateProject || isSubmitting}
+                onPress={submitFolders}
+                loading={isSubmitting}
+              />
+            </>
+          ) : null}
           <PrimaryActionButton
-            label="Add project"
+            label={foldersMode ? "Add folder" : "Add project"}
             disabled={!canCreateProject || isBrowseNavigating || isSubmitting}
             onPress={submitPath}
-            loading={isSubmitting}
+            loading={isSubmitting && !foldersMode}
           />
           <FolderBrowser
             environment={environment}

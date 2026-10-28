@@ -9,7 +9,7 @@ import type {
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { newProjectFolderName } from "@t3tools/shared/path";
+import { newProjectFolderName, normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -283,7 +283,11 @@ export function findExistingAddProject(input: {
 }): EnvironmentProject | null {
   return (
     findProjectByPath(
-      input.projects.filter((project) => project.environmentId === input.environmentId),
+      input.projects.filter(
+        (project) =>
+          project.environmentId === input.environmentId &&
+          (project.additionalWorkspaceRoots ?? []).length === 0,
+      ),
       input.path,
     ) ?? null
   );
@@ -303,4 +307,29 @@ export function buildProjectCreateCommand(input: {
     createWorkspaceRootIfMissing: true,
     defaultModelSelection: null,
   };
+}
+
+// One working folder plus the contract's 20 additional workspace roots.
+export const MAX_PROJECT_FOLDERS = 21;
+
+export function appendProjectFolder(
+  folders: ReadonlyArray<string>,
+  folder: string,
+): { readonly folders: ReadonlyArray<string>; readonly status: "added" | "duplicate" | "full" } {
+  const key = normalizeProjectPathForComparison(folder);
+  if (folders.some((existing) => normalizeProjectPathForComparison(existing) === key)) {
+    return { folders, status: "duplicate" };
+  }
+  if (folders.length >= MAX_PROJECT_FOLDERS) {
+    return { folders, status: "full" };
+  }
+  return { folders: [...folders, folder], status: "added" };
+}
+
+export function uniqueProjectTitle(base: string, existingTitles: ReadonlyArray<string>): string {
+  const used = new Set(existingTitles.map((title) => title.trim().toLowerCase()));
+  if (!used.has(base.trim().toLowerCase())) return base;
+  let suffix = 2;
+  while (used.has(`${base} ${suffix}`.trim().toLowerCase())) suffix += 1;
+  return `${base} ${suffix}`;
 }

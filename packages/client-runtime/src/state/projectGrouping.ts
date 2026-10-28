@@ -72,26 +72,27 @@ export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: str
   return `${environmentId}:${normalizeProjectPathForComparison(cwd)}`;
 }
 
-export function derivePhysicalProjectKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
-): string {
+type ProjectKeySource = Pick<EnvironmentProject, "environmentId" | "workspaceRoot">;
+
+type GroupableProject = Pick<
+  EnvironmentProject,
+  "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch" | "createdAt"
+>;
+
+export function derivePhysicalProjectKey(project: ProjectKeySource): string {
   return derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
 }
 
-function deriveProjectGroupingOverrideKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
-): string {
+function deriveProjectGroupingOverrideKey(project: ProjectKeySource): string {
   return derivePhysicalProjectKey(project);
 }
 
-export function getProjectOrderKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
-): string {
+export function getProjectOrderKey(project: ProjectKeySource): string {
   return derivePhysicalProjectKey(project);
 }
 
 function resolveProjectGroupingMode(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: ProjectKeySource,
   settings: ProjectGroupingSettings,
 ): SidebarProjectGroupingMode {
   return (
@@ -126,62 +127,99 @@ function deriveRepositoryScopedKey(
     : `${canonicalKey}::${relativeProjectPath}`;
 }
 
+function projectAgeOrder(
+  left: Pick<EnvironmentProject, "id" | "createdAt">,
+  right: Pick<EnvironmentProject, "id" | "createdAt">,
+): number {
+  const leftTime = Date.parse(left.createdAt);
+  const rightTime = Date.parse(right.createdAt);
+  const delta =
+    (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0);
+  if (delta !== 0) return delta;
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+}
+
+// The oldest project on a set of folders keeps the plain key; later ones carry `@id` so adding a duplicate never renames the original.
+function indexOldestProjectByBaseKey(
+  projects: ReadonlyArray<GroupableProject>,
+): Map<string, GroupableProject> {
+  const oldest = new Map<string, GroupableProject>();
+  for (const project of projects) {
+    const baseKey = derivePhysicalProjectKey(project);
+    const current = oldest.get(baseKey);
+    if (!current || projectAgeOrder(project, current) < 0) oldest.set(baseKey, project);
+  }
+  return oldest;
+}
+
+function isLaterDuplicate(
+  project: GroupableProject,
+  oldestByBaseKey: ReadonlyMap<string, GroupableProject>,
+): boolean {
+  const oldest = oldestByBaseKey.get(derivePhysicalProjectKey(project));
+  return oldest !== undefined && oldest.id !== project.id;
+}
+
+function deriveMemberPhysicalKey(project: GroupableProject, duplicate: boolean): string {
+  const baseKey = derivePhysicalProjectKey(project);
+  return duplicate ? `${baseKey}@${project.id}` : baseKey;
+}
+
 function deriveLogicalProjectKey(
-  project: Pick<
-    EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
-  >,
-  options?: {
-    readonly groupingMode?: SidebarProjectGroupingMode;
-    readonly groupScratchProjects?: boolean;
+  project: GroupableProject,
+  options: {
+    readonly groupingMode: SidebarProjectGroupingMode;
+    readonly groupScratchProjects: boolean;
+    readonly duplicate: boolean;
   },
 ): string {
-  if (options?.groupScratchProjects && project.isScratch) return SCRATCH_PROJECT_SCOPE_KEY;
-  const groupingMode = options?.groupingMode ?? "repository";
-  if (groupingMode === "separate") {
-    return derivePhysicalProjectKey(project);
-  }
-
-  return (
-    deriveRepositoryScopedKey(project, groupingMode) ??
-    derivePhysicalProjectKey(project) ??
-    scopedProjectKey(scopeProjectRef(project.environmentId, project.id))
-  );
+  if (options.groupScratchProjects && project.isScratch) return SCRATCH_PROJECT_SCOPE_KEY;
+  const baseKey =
+    (options.groupingMode === "separate"
+      ? null
+      : deriveRepositoryScopedKey(project, options.groupingMode)) ??
+    derivePhysicalProjectKey(project);
+  // A same-folder duplicate is its own row in every grouping mode.
+  return options.duplicate ? `${baseKey}@${project.id}` : baseKey;
 }
 
 export function deriveLogicalProjectKeyFromSettings(
-  project: Pick<
-    EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
-  >,
+  project: GroupableProject,
   settings: ProjectGroupingSettings,
-  options?: { readonly groupScratchProjects?: boolean },
+  options?: {
+    readonly groupScratchProjects?: boolean;
+    // Pass every known project so a later same-folder duplicate resolves to its own key.
+    readonly projects?: ReadonlyArray<GroupableProject>;
+  },
 ): string {
   return deriveLogicalProjectKey(project, {
     groupingMode: resolveProjectGroupingMode(project, settings),
     groupScratchProjects: options?.groupScratchProjects ?? false,
+    duplicate: options?.projects
+      ? isLaterDuplicate(project, indexOldestProjectByBaseKey(options.projects))
+      : false,
   });
 }
 
 export function resolveScratchProjectScopeKey(
   key: string | null,
-  projects: ReadonlyArray<
-    Pick<
-      EnvironmentProject,
-      "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
-    >
-  >,
+  projects: ReadonlyArray<GroupableProject>,
   settings: ProjectGroupingSettings = {
     sidebarProjectGroupingMode: "repository",
     sidebarProjectGroupingOverrides: {},
   },
 ): string | null {
   if (key === null || key === SCRATCH_PROJECT_SCOPE_KEY) return key;
+  const oldestByBaseKey = indexOldestProjectByBaseKey(projects);
+  const duplicateOf = (project: GroupableProject) => isLaterDuplicate(project, oldestByBaseKey);
   if (
     projects.some(
       (project) =>
-        deriveLogicalProjectKeyFromSettings(project, settings, { groupScratchProjects: true }) ===
-        key,
+        deriveLogicalProjectKey(project, {
+          groupingMode: resolveProjectGroupingMode(project, settings),
+          groupScratchProjects: true,
+          duplicate: duplicateOf(project),
+        }) === key,
     )
   ) {
     return key;
@@ -190,7 +228,7 @@ export function resolveScratchProjectScopeKey(
     if (!project.isScratch) return false;
     const mode = resolveProjectGroupingMode(project, settings);
     return (
-      derivePhysicalProjectKey(project) === key ||
+      deriveMemberPhysicalKey(project, duplicateOf(project)) === key ||
       (mode !== "separate" && deriveRepositoryScopedKey(project, mode) === key)
     );
   })
@@ -244,100 +282,40 @@ export interface ProjectGroup<TProject extends EnvironmentProject = EnvironmentP
   readonly memberProjectRefs: ReadonlyArray<ScopedProjectRef>;
 }
 
-function projectFreshnessTime(project: EnvironmentProject): number {
-  const updatedAtTime = Date.parse(project.updatedAt);
-  if (Number.isFinite(updatedAtTime)) {
-    return updatedAtTime;
-  }
-  const createdAtTime = Date.parse(project.createdAt);
-  return Number.isFinite(createdAtTime) ? createdAtTime : 0;
-}
-
-function shouldReplacePhysicalProjectWinner<TProject extends EnvironmentProject>(
-  existing: TProject,
-  candidate: TProject,
-): boolean {
-  const freshnessDelta = projectFreshnessTime(candidate) - projectFreshnessTime(existing);
-  return freshnessDelta > 0 || (freshnessDelta === 0 && candidate.id > existing.id);
-}
-
-function selectProjectIdentitySource<TProject extends EnvironmentProject>(
-  projects: ReadonlyArray<TProject>,
-  winner: TProject,
-): TProject {
-  if (winner.repositoryIdentity !== null) {
-    return winner;
-  }
-
-  let freshestIdentifiedProject: TProject | null = null;
-  for (const project of projects) {
-    if (project.repositoryIdentity === null) {
-      continue;
-    }
-    if (
-      freshestIdentifiedProject === null ||
-      shouldReplacePhysicalProjectWinner(freshestIdentifiedProject, project)
-    ) {
-      freshestIdentifiedProject = project;
-    }
-  }
-  return freshestIdentifiedProject ?? winner;
-}
-
 export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
   readonly projects: ReadonlyArray<TProject>;
   readonly settings: ProjectGroupingSettings;
   readonly preferredEnvironmentId?: EnvironmentId | null;
   readonly groupScratchProjects?: boolean;
 }): ReadonlyArray<ProjectGroup<TProject>> {
-  const projectsByPhysicalKey = new Map<string, TProject[]>();
-  for (const project of input.projects) {
-    const physicalProjectKey = derivePhysicalProjectKey(project);
-    const existing = projectsByPhysicalKey.get(physicalProjectKey);
-    if (existing) {
-      existing.push(project);
-    } else {
-      projectsByPhysicalKey.set(physicalProjectKey, [project]);
-    }
-  }
-
-  const logicalKeyByPhysicalKey = new Map<string, string>();
+  const oldestByBaseKey = indexOldestProjectByBaseKey(input.projects);
   const groupedMembers = new Map<string, ProjectGroupMember<TProject>[]>();
-  for (const [physicalProjectKey, physicalProjects] of projectsByPhysicalKey) {
-    const winner = physicalProjects.reduce((current, candidate) =>
-      shouldReplacePhysicalProjectWinner(current, candidate) ? candidate : current,
-    );
-    const identitySource = selectProjectIdentitySource(physicalProjects, winner);
-    const logicalKey = deriveLogicalProjectKey(identitySource, {
-      groupingMode: resolveProjectGroupingMode(winner, input.settings),
-      groupScratchProjects: input.groupScratchProjects ?? false,
-    });
-    logicalKeyByPhysicalKey.set(physicalProjectKey, logicalKey);
-    const member = { physicalProjectKey, project: winner };
-    const existing = groupedMembers.get(logicalKey);
-    if (existing) {
-      existing.push(member);
-    } else {
-      groupedMembers.set(logicalKey, [member]);
-    }
-  }
-
   const projectRefsByLogicalKey = new Map<string, ScopedProjectRef[]>();
   const seenProjectRefs = new Set<string>();
   for (const project of input.projects) {
-    const physicalProjectKey = derivePhysicalProjectKey(project);
-    const logicalKey =
-      logicalKeyByPhysicalKey.get(physicalProjectKey) ??
-      deriveLogicalProjectKeyFromSettings(project, input.settings, {
-        groupScratchProjects: input.groupScratchProjects ?? false,
-      });
-    const projectRefKey = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
+    const projectRef = scopeProjectRef(project.environmentId, project.id);
+    const projectRefKey = scopedProjectKey(projectRef);
     if (seenProjectRefs.has(projectRefKey)) continue;
     seenProjectRefs.add(projectRefKey);
-    const projectRef = scopeProjectRef(project.environmentId, project.id);
-    const existing = projectRefsByLogicalKey.get(logicalKey);
-    if (existing) {
-      existing.push(projectRef);
+
+    // Several projects may share folders; each is its own member.
+    const duplicate = isLaterDuplicate(project, oldestByBaseKey);
+    const physicalProjectKey = deriveMemberPhysicalKey(project, duplicate);
+    const logicalKey = deriveLogicalProjectKey(project, {
+      groupingMode: resolveProjectGroupingMode(project, input.settings),
+      groupScratchProjects: input.groupScratchProjects ?? false,
+      duplicate,
+    });
+    const member = { physicalProjectKey, project };
+    const existingMembers = groupedMembers.get(logicalKey);
+    if (existingMembers) {
+      existingMembers.push(member);
+    } else {
+      groupedMembers.set(logicalKey, [member]);
+    }
+    const existingRefs = projectRefsByLogicalKey.get(logicalKey);
+    if (existingRefs) {
+      existingRefs.push(projectRef);
     } else {
       projectRefsByLogicalKey.set(logicalKey, [projectRef]);
     }
