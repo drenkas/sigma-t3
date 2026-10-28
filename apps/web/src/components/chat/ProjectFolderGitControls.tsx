@@ -20,7 +20,7 @@ import {
   useSourceControlActionRunning,
   useVcsInitAction,
   useVcsPullAction,
-} from "../../lib/sourceControlActions";
+} from "../../state/sourceControlActions";
 import { randomUUID } from "../../lib/utils";
 import { usePaginatedBranches } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
@@ -265,7 +265,6 @@ function FolderBranchPicker({
       filteredItems={filteredItems}
       value={current}
       query={query}
-      resultsQuery={deferredQuery}
       onQueryChange={setQuery}
       open={open}
       onOpenChange={(next) => {

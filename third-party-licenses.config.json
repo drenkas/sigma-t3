@@ -868,6 +868,22 @@
       "name": "iobuffer",
       "license": "MIT",
       "sourceUrl": "https://github.com/image-js/iobuffer"
+    },
+    {
+      "repositoryUrl": "https://github.com/csukuangfj/sherpa-onnx",
+      "license": "Apache-2.0 AND MIT",
+      "sourceUrl": "https://github.com/k2-fsa/sherpa-onnx",
+      "generatedNotices": [
+        {
+          "licenseId": "Apache-2.0",
+          "copyrights": ["Copyright (c) 2022-2026 Xiaomi Corporation and the Next-gen Kaldi team"]
+        },
+        {
+          "licenseId": "MIT",
+          "copyrights": ["Copyright (c) Microsoft Corporation"],
+          "preamble": ["The sherpa-onnx native addon bundles ONNX Runtime."]
+        }
+      ]
     }
   ]
 }

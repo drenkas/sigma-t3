@@ -124,18 +124,6 @@ export function deriveThreadRelationshipGraph(input: {
   return { nodes, edges: [...edgesByKey.values()] };
 }
 
-export function relatedThreadIds(
-  graph: ThreadRelationshipGraph,
-  threadId: ThreadId,
-): ReadonlyArray<ThreadId> {
-  const ids = new Set<ThreadId>();
-  for (const edge of graph.edges) {
-    if (edge.sourceThreadId === threadId) ids.add(edge.targetThreadId);
-    if (edge.targetThreadId === threadId) ids.add(edge.sourceThreadId);
-  }
-  return [...ids];
-}
-
 export function walkThreadRelationships(
   graph: ThreadRelationshipGraph,
   threadId: ThreadId,

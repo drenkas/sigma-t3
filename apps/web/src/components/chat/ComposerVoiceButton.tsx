@@ -14,6 +14,41 @@ type Phase = "idle" | "recording" | "transcribing";
 
 // Matches the mobile composer's cap and keeps one request well under the server's limit.
 const RECORDING_LIMIT_MS = 5 * 60 * 1000;
+const METER_BARS = 12;
+const METER_INTERVAL_MS = 80;
+
+function VoiceLevelMeter({ level }: { readonly level: () => number }) {
+  const bars = useRef<Array<HTMLSpanElement | null>>([]);
+
+  // oxlint-disable-next-line t3code/react-effect-budget -- samples the live microphone level while recording
+  useEffect(() => {
+    const history: number[] = Array.from({ length: METER_BARS }, () => 0);
+    // Mutating the bars directly keeps a 12 Hz meter from re-rendering the composer.
+    const timer = window.setInterval(() => {
+      history.shift();
+      history.push(level());
+      history.forEach((value, index) => {
+        const bar = bars.current[index];
+        if (bar) bar.style.transform = `scaleY(${Math.max(0.12, value).toFixed(3)})`;
+      });
+    }, METER_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [level]);
+
+  return (
+    <span aria-hidden className="flex h-4 items-center gap-0.5 px-1">
+      {Array.from({ length: METER_BARS }, (_, index) => (
+        <span
+          key={index}
+          ref={(element) => {
+            bars.current[index] = element;
+          }}
+          className="h-full w-0.5 scale-y-[0.12] rounded-full bg-destructive"
+        />
+      ))}
+    </span>
+  );
+}
 
 export function ComposerVoiceButton({
   environmentId,
@@ -28,6 +63,7 @@ export function ComposerVoiceButton({
   const transcribe = useAtomCommand(serverEnvironment.transcribeSpeech);
   const warmUp = useAtomCommand(serverEnvironment.transcribeSpeech, { reportFailure: false });
   const [phase, setPhase] = useState<Phase>("idle");
+  const [level, setLevel] = useState<(() => number) | null>(null);
   const recording = useRef<VoiceRecording | null>(null);
   const limitTimer = useRef<number | null>(null);
 
@@ -46,11 +82,20 @@ export function ComposerVoiceButton({
     recording.current = null;
     if (limitTimer.current !== null) window.clearTimeout(limitTimer.current);
     setPhase("transcribing");
+    setLevel(null);
     try {
       const audio = await active.stop();
       const result = await transcribe({ environmentId, input: audio });
-      if (result._tag === "Success" && result.value.text.length > 0) {
-        onTranscript(result.value.text);
+      if (result._tag !== "Success") return;
+      const text = result.value.text.trim();
+      if (text.length > 0) {
+        onTranscript(text);
+      } else {
+        toastManager.add({
+          type: "warning",
+          title: "No speech recognized",
+          description: "Check that Sigma T3 can use the microphone and speak a little louder.",
+        });
       }
     } catch {
       toastManager.add({ type: "error", title: "Could not read the recording." });
@@ -68,8 +113,9 @@ export function ComposerVoiceButton({
       });
       return;
     }
+    let started: VoiceRecording;
     try {
-      recording.current = await startVoiceRecording();
+      started = await startVoiceRecording();
     } catch {
       toastManager.add({
         type: "error",
@@ -78,7 +124,9 @@ export function ComposerVoiceButton({
       });
       return;
     }
+    recording.current = started;
     setPhase("recording");
+    setLevel(() => started.level);
     limitTimer.current = window.setTimeout(() => void finish(), RECORDING_LIMIT_MS);
     void warmUp({ environmentId, input: { sampleRate: 16_000, pcm: new Uint8Array(0) } });
   };
@@ -90,30 +138,33 @@ export function ComposerVoiceButton({
         ? "Transcribing"
         : "Dictate";
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant={phase === "recording" ? "destructive-outline" : "ghost"}
-            size="icon-sm"
-            disabled={phase === "transcribing"}
-            aria-pressed={phase === "recording"}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={() => void (phase === "recording" ? finish() : start())}
-            aria-label={label}
-          />
-        }
-      >
-        {phase === "recording" ? (
-          <SquareIcon />
-        ) : phase === "transcribing" ? (
-          <EllipsisIcon />
-        ) : (
-          <MicIcon />
-        )}
-      </TooltipTrigger>
-      <TooltipPopup>{label}</TooltipPopup>
-    </Tooltip>
+    <span className="flex items-center">
+      {level ? <VoiceLevelMeter level={level} /> : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant={phase === "recording" ? "destructive-outline" : "ghost"}
+              size="icon-sm"
+              disabled={phase === "transcribing"}
+              aria-pressed={phase === "recording"}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => void (phase === "recording" ? finish() : start())}
+              aria-label={label}
+            />
+          }
+        >
+          {phase === "recording" ? (
+            <SquareIcon />
+          ) : phase === "transcribing" ? (
+            <EllipsisIcon />
+          ) : (
+            <MicIcon />
+          )}
+        </TooltipTrigger>
+        <TooltipPopup>{label}</TooltipPopup>
+      </Tooltip>
+    </span>
   );
 }
