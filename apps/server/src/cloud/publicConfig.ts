@@ -1,8 +1,4 @@
-import {
-  connectLoopbackRedirectUri,
-  CONNECT_OAUTH_SCOPES,
-  DEFAULT_HOSTED_APP_URL,
-} from "@t3tools/shared/connectAuth";
+import { connectLoopbackRedirectUri, CONNECT_OAUTH_SCOPES } from "@t3tools/shared/connectAuth";
 import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { isRelayTracingEnabled } from "@t3tools/shared/otelEnvironment";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
@@ -111,7 +107,7 @@ export const relayUrlConfig = makeRelayUrlConfig();
 
 export const hostedAppUrlConfig = makePublicValueConfig(
   "SIGMA_T3_HOSTED_APP_URL",
-  DEFAULT_HOSTED_APP_URL,
+  "https://app.t3.codes",
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
 function validateHostedAppUrl(value: string) {
