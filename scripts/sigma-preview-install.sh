@@ -3,7 +3,7 @@
 # and installs it into /Applications. See docs/operations/sigma-fork.md.
 #
 # Usage: scripts/sigma-preview-install.sh [version]
-#   version  defaults to <desktop version>-preview.<UTC timestamp>
+#   version  defaults to <desktop version>-preview.<UTC timestamp>.g<short commit>
 #
 # Env: SIGMA_PREVIEW_BUILD_DIR         build worktree (default: ../sigma-t3-build next to this checkout)
 #      SIGMA_PREVIEW_REF               ref to build (default: origin/main)
@@ -61,12 +61,14 @@ else
 fi
 
 BASE_VERSION="$(node -p 'require("./apps/desktop/package.json").version.split("-")[0]')"
-VERSION="${1:-${BASE_VERSION}-preview.$(date -u +%Y%m%d%H%M)}"
+COMMIT="$(git rev-parse --short HEAD)"
+# The `g` prefix keeps an all-digit hash a valid semver identifier, as in `git describe`.
+VERSION="${1:-${BASE_VERSION}-preview.$(date -u +%Y%m%d%H%M).g${COMMIT}}"
 if [[ "$VERSION" != *-preview.* ]]; then
   echo "error: version '${VERSION}' must contain '-preview.' so the build omits the update feed." >&2
   exit 1
 fi
-echo "==> Building ${APP_NAME} ${VERSION} from $(git rev-parse --short HEAD)"
+echo "==> Building ${APP_NAME} ${VERSION} from ${COMMIT}"
 if [[ -n "${SIGMA_PREVIEW_SIGNING_IDENTITY:-}" ]]; then
   echo "    Signing with ${SIGMA_PREVIEW_SIGNING_IDENTITY}"
 else

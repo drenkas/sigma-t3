@@ -14,7 +14,7 @@ Fork tables migrate through `apps/server/src/persistence/SigmaMigrations.ts`, re
 
 ## Build an isolated macOS arm64 preview
 
-For daily use, `pnpm run sigma:preview-install [version]` runs the steps below in a separate `../sigma-t3-build` worktree from `origin/main`, copies this checkout's `.env` and `.env.local` into it, builds the ZIP, verifies the signature, and replaces `/Applications/Sigma T3.app` (the previous bundle goes to the Trash). It refuses to run while Sigma T3 is open.
+For daily use, `pnpm run sigma:preview-install [version]` runs the steps below in a separate `../sigma-t3-build` worktree from `origin/main`, copies this checkout's `.env` and `.env.local` into it, builds the ZIP, verifies the signature, and replaces `/Applications/Sigma T3.app` (the previous bundle goes to the Trash). It refuses to run while Sigma T3 is open. The default version is `<base>-preview.<UTC yyyyMMddHHmm>.g<short commit>`, shown in Settings → About, so the running build names the commit it came from.
 
 From a clean owned checkout with locked dependencies:
 

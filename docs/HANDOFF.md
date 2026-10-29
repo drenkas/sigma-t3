@@ -118,7 +118,7 @@ Standing rule from Dmytro (2026-10-24): the daily sync does not need a PR.
 | `~/.sigma-t3/userdata`                | Дані встановленої програми. Справжня база власника: не запускати на ній dev-сервер, не відкривати на запис            |
 | `~/.sigma-t3/dev`                     | Дані dev-режиму (там зараз основні чати, див. розділ 4)                                                               |
 
-Щоденний процес власника: закрити Sigma T3 → `cd ~/Documents/Projects/sigma-t3 && pnpm run sigma:preview-install` → відкрити Sigma T3 з Applications. Скрипт сам бере свіжий `origin/main`, ставить версію `0.1.0-preview.<дата-час>`, збирає ZIP (DMG на macOS 27 падає на `hdiutil`), перевіряє `codesign` і замінює застосунок (старий іде в Кошик). Агенти тестують свої зміни через `vp run dev` у власних worktree, щоб не заважати власнику.
+Щоденний процес власника: закрити Sigma T3 → `cd ~/Documents/Projects/sigma-t3 && pnpm run sigma:preview-install` → відкрити Sigma T3 з Applications. Скрипт сам бере свіжий `origin/main`, ставить версію `0.1.0-preview.<дата-час UTC>.g<короткий коміт>` (видно в Settings → About, тож одразу ясно, з якого коміту зібрано запущений застосунок), збирає ZIP (DMG на macOS 27 падає на `hdiutil`), перевіряє `codesign` і замінює застосунок (старий іде в Кошик). Агенти тестують свої зміни через `vp run dev` у власних worktree, щоб не заважати власнику.
 
 Потрібен Node 24+, pnpm 12.
 
