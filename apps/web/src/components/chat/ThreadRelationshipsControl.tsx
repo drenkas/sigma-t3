@@ -70,7 +70,7 @@ import {
   useThreadProjection,
   useThreadRelationshipShells,
 } from "../../state/entities";
-import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
+import { useEnvironment, useEnvironmentProviders, useEnvironments } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -398,6 +398,7 @@ export function ThreadRelationshipsPanel(props: {
   const [busyAction, setBusyAction] = useState<"merge" | "detach" | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(false);
+  const { presentationById: environmentsById } = useEnvironments();
   // Derive graphs after hooks to preserve their compiler cache.
   const providers = providersByEnvironment.get(props.environmentId);
   const projects = allProjects.filter((project) => project.environmentId === props.environmentId);
@@ -619,7 +620,20 @@ export function ThreadRelationshipsPanel(props: {
         </ThreadLineageRowList>
       )}
       {showGraph ? (
-        <ThreadLineageGraph graph={graph} threadId={props.threadId} onOpenThread={openThread} />
+        <ThreadLineageGraph
+          graph={graph}
+          threadId={props.threadId}
+          providers={providers}
+          subagents={projection?.subagents}
+          onOpenThread={openThread}
+          onOpenRemote={(child) => {
+            if (!environmentsById.has(child.environmentId)) return;
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(scopeThreadRef(child.environmentId, child.threadId)),
+            });
+          }}
+        />
       ) : null}
       {(showGraph ? [] : groups).map((group) => (
         <ThreadLineageGroup key={`${scopedThreadKey(ref)}:${group.id}`} {...group}>

@@ -5,7 +5,11 @@ import type {
   ThreadRelationshipGraph,
   ThreadRelationshipNode,
 } from "@t3tools/client-runtime/state/thread-relationships";
-import type { OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
+import type {
+  OrchestrationV2Subagent,
+  OrchestrationV2ThreadShell,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import { render } from "../../../test/render";
 import { ThreadLineageGraph } from "./ThreadLineageGraph";
@@ -22,6 +26,8 @@ const shell = (
     status,
     activityRunStatus: null,
     pendingRuntimeRequest: null,
+    providerInstanceId: "claudeAgent",
+    modelSelection: { instanceId: "claudeAgent", model: `${id}-model` },
     lineage: { relationshipToParent, role },
   }) as unknown as OrchestrationV2ThreadShell;
 const edge = (
@@ -59,7 +65,56 @@ const graph: ThreadRelationshipGraph = {
   ],
 };
 
+// Subagents without a local thread: one running natively, one delegated to a linked environment.
+const threadless = [
+  {
+    id: "node:native",
+    threadId: "current",
+    childThreadId: null,
+    title: "Native helper",
+    model: "claude-haiku-5-5",
+    providerInstanceId: "claudeAgent",
+    status: "running",
+  },
+  {
+    id: "node:remote",
+    threadId: "current",
+    childThreadId: null,
+    title: "Remote helper",
+    model: null,
+    providerInstanceId: "codex",
+    status: "pending",
+    remoteChild: { environmentId: "env:laptop", threadId: "thread:remote", label: "laptop" },
+  },
+] as unknown as ReadonlyArray<OrchestrationV2Subagent>;
+
 describe("ThreadLineageGraph", () => {
+  it("draws subagents that have no thread here and opens remote ones on their environment", async () => {
+    const remote: Array<string> = [];
+    await using screen = await render(
+      <ThreadLineageGraph
+        graph={graph}
+        threadId={"current" as ThreadId}
+        subagents={threadless}
+        onOpenThread={() => {}}
+        onOpenRemote={(child) => remote.push(child.threadId)}
+      />,
+    );
+
+    await expect.element(screen.getByText("3 running", { exact: false })).toBeVisible();
+    await expect
+      .element(
+        screen.getByRole("button", {
+          name: /^Native helper\. Subagent\. Claude Haiku 5\.5\. running\./,
+        }),
+      )
+      .toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: /^Remote helper\. Subagent on laptop\./ }),
+    );
+    expect(remote).toEqual(["thread:remote"]);
+  });
+
   it("draws the whole lineage as a tree and opens only available threads", async () => {
     const opened: Array<string> = [];
     await using screen = await render(
@@ -85,6 +140,7 @@ describe("ThreadLineageGraph", () => {
       .element(screen.getByRole("button", { name: /^helper\. Reviewer\./ }))
       .toBeVisible();
     await expect.element(screen.getByText("reviewer", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("· helper-model", { exact: true })).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: /^gone\./ }));
     await userEvent.click(screen.getByRole("button", { name: /^current\./ }));

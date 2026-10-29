@@ -2,6 +2,7 @@ export type ExecutionGraphNode = {
   readonly id: string;
   readonly title: string;
   readonly subtitle: string;
+  readonly model?: string | undefined;
   // Picks the node's colour, so the same role reads the same everywhere.
   readonly role: string;
   readonly status: string;

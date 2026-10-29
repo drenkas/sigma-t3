@@ -144,7 +144,7 @@ export function ExecutionGraph({
 
   // Keeps the whole tree in view while it grows, until the user pans or zooms.
   const { width, height } = layout;
-  // oxlint-disable-next-line t3code/react-effect-budget -- subscribes to the viewport's ResizeObserver
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the viewport's ResizeObserver
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -157,7 +157,7 @@ export function ExecutionGraph({
   }, [viewportRef, width, height]);
 
   // React registers wheel listeners as passive, and zooming has to keep the page from scrolling.
-  // oxlint-disable-next-line t3code/react-effect-budget -- needs a non-passive native wheel listener
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- needs a non-passive native wheel listener
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -379,7 +379,7 @@ export function ExecutionGraph({
                 type="button"
                 data-node={id}
                 aria-pressed={selectedId === id}
-                aria-label={`${node.title}. ${node.subtitle}. ${pretty(node.status)}${node.pendingApproval ? ", waiting for your approval" : ""}.`}
+                aria-label={`${node.title}. ${node.subtitle}.${node.model ? ` ${node.model}.` : ""} ${pretty(node.status)}${node.pendingApproval ? ", waiting for your approval" : ""}.`}
                 className={cn(
                   "flex flex-col items-start gap-0.5 overflow-hidden rounded-lg border py-2 pr-3 pl-3.5 text-left shadow-xs outline-none transition-[opacity,translate,border-color,box-shadow] duration-200 ease-out starting:translate-y-1 starting:opacity-0 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none",
                   selectedId === id ? "border-primary ring-1 ring-primary" : "border-border",
@@ -415,8 +415,13 @@ export function ExecutionGraph({
                   }}
                 />
                 <span className="w-full truncate text-xs font-medium">{node.title}</span>
-                <span className="w-full truncate text-3xs text-muted-foreground">
-                  {node.subtitle}
+                <span className="flex w-full min-w-0 items-baseline gap-1 text-3xs text-muted-foreground">
+                  <span className="shrink-0">{node.subtitle}</span>
+                  {node.model ? (
+                    <span className="truncate" data-node-model>
+                      · {node.model}
+                    </span>
+                  ) : null}
                 </span>
                 <span
                   className={cn(
