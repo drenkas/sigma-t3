@@ -21,7 +21,7 @@ export async function startVoiceRecording(): Promise<VoiceRecording> {
   recorder.addEventListener("dataavailable", (event) => chunks.push(event.data));
   const meterContext = new AudioContext();
   const analyser = meterContext.createAnalyser();
-  analyser.fftSize = 1024;
+  analyser.fftSize = 2048;
   meterContext.createMediaStreamSource(stream).connect(analyser);
   const frame = new Float32Array(analyser.fftSize);
   const release = () => {
@@ -50,8 +50,8 @@ export async function startVoiceRecording(): Promise<VoiceRecording> {
       analyser.getFloatTimeDomainData(frame);
       let sum = 0;
       for (const sample of frame) sum += sample * sample;
-      // Speech RMS sits around 0.02-0.2; the square root spreads it across the meter.
-      return Math.min(1, Math.sqrt(Math.sqrt(sum / frame.length) * 4));
+      // Speech RMS sits around 0.02-0.2; the gain and square root put normal speech at 40-100%.
+      return Math.min(1, Math.sqrt(Math.sqrt(sum / frame.length) * 8));
     },
   };
 }

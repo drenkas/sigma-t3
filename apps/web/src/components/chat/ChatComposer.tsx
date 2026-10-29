@@ -198,7 +198,11 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ComposerVoiceButton } from "./ComposerVoiceButton";
+import {
+  ComposerVoiceButton,
+  type ComposerVoiceHandle,
+  type ComposerVoicePhase,
+} from "./ComposerVoiceButton";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -1032,6 +1036,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const providerInputRejectedRef = useRef(false);
+  const voiceButtonRef = useRef<ComposerVoiceHandle>(null);
+  const voicePhaseRef = useRef<ComposerVoicePhase>("idle");
+  const [voicePhase, setVoicePhase] = useState<ComposerVoicePhase>("idle");
+  const [isVoiceSendPending, setIsVoiceSendPending] = useState(false);
+  const handleVoicePhaseChange = useStableCallback((next: ComposerVoicePhase) => {
+    voicePhaseRef.current = next;
+    setVoicePhase(next);
+  });
   const composerSelectLockRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
   const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
@@ -2059,7 +2071,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return showPlanFollowUpPrompt || composerSendState.hasSendableContent;
   };
 
-  const submitComposer = (
+  const sendComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
@@ -2119,6 +2131,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (shouldBlurMobileComposerOnSubmit()) {
       blurMobileComposerAfterSend();
     }
+  };
+  const sendComposerStable = useStableCallback(sendComposer);
+  // Sending while dictating stops the recording first. The re-send goes through the
+  // stable callback because the render that started the send is minutes old by then.
+  const submitComposer = (
+    event?: { preventDefault: () => void },
+    dispatchMode?: ComposerDispatchMode,
+    submissionIntent?: ComposerSubmissionIntent,
+  ) => {
+    const voiceNow = voicePhaseRef.current;
+    if (voiceNow === "idle" || isSendDisabled || noProviderAvailable) {
+      sendComposer(event, dispatchMode, submissionIntent);
+      return;
+    }
+    event?.preventDefault();
+    const voiceButton = voiceButtonRef.current;
+    if (voiceNow !== "recording" || voiceButton === null) return;
+    // Switching threads or a new question mid-transcription leaves the text unsent.
+    const targetKey = attachmentTargetKeyRef.current;
+    setIsVoiceSendPending(true);
+    void voiceButton
+      .stopAndTranscribe()
+      .then((outcome) => {
+        if (outcome !== "failed" && attachmentTargetKeyRef.current === targetKey) {
+          sendComposerStable(undefined, dispatchMode, submissionIntent);
+        }
+      })
+      .finally(() => setIsVoiceSendPending(false));
   };
   const submitComposerStable = useStableCallback(submitComposer);
   const handleSubmitMessage = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -3098,12 +3138,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
+  const voiceRecording = settings.voiceInputEnabled && voicePhase === "recording";
   const composerVoiceButton = settings.voiceInputEnabled ? (
     <ComposerVoiceButton
+      ref={voiceButtonRef}
       environmentId={environmentId}
-      onTranscript={(text) => {
-        insertComposerTextStable(text, "cursor", { ensureLeadingBoundary: true });
-      }}
+      onPhaseChange={handleVoicePhaseChange}
+      onTranscript={(text) =>
+        insertComposerTextStable(text, "cursor", { ensureLeadingBoundary: true })
+      }
     />
   ) : null;
   const composerAttachButton = showComposerAttachAction ? (
@@ -3506,7 +3549,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       pendingUserInputs.length === 0 && showPlanFollowUpPrompt
                     }
                     promptHasText={prompt.trim().length > 0}
-                    isSendBusy={isSendBusy}
+                    isSendBusy={isSendBusy || isVoiceSendPending}
                     sendDisabledReason={sendDisabledReason}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||
@@ -3514,7 +3557,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       projectSelectionRequired
                     }
                     isPreparingWorktree={isPreparingWorktree}
-                    hasSendableContent={composerSendState.hasSendableContent}
+                    hasSendableContent={composerSendState.hasSendableContent || voiceRecording}
+                    isRecordingVoice={voiceRecording}
                     canResume={showResumeAction}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
                     isEditingQueuedMessage={isEditingQueuedMessage}
