@@ -38,13 +38,22 @@ A preview with `T3CODE_DESKTOP_SIGNED=false` uses electron-builder's explicit ad
 
 macOS keys privacy permissions (microphone, accessibility, screen recording, and the rest of TCC) on the app's designated requirement. For an ad-hoc signature that is the per-build cdhash, so every preview rebuild starts with no permissions. `sigma:preview-install` signs with the first Apple Development identity in the keychain when one exists. Otherwise set `SIGMA_PREVIEW_SIGNING_IDENTITY` (or pass `--preview-signing-identity` to the build script) to a code-signing identity from `security find-identity -v -p codesigning`, such as an Apple Development certificate or a self-signed one made in Keychain Access, and the preview's requirement becomes the certificate plus bundle identifier, which is stable across rebuilds. Grant permissions once more after switching; stale ad-hoc entries can be cleared with `tccutil reset All com.drenkas.sigma-t3`.
 
-Ad-hoc signing provides local bundle integrity, not Developer ID trust or notarization. Archive creation and signature verification do not establish launch readiness. Before distribution, obtain the appropriate Developer ID credentials, build the verified revision, inspect its bundle identity/profile paths, and test installing beside T3 and updating between two own signed builds. Do not launch or install artifacts without the applicable user authorization.
+Ad-hoc and Apple Development signatures provide local bundle integrity, not Developer ID trust or notarization. Archive creation and signature verification do not establish launch readiness. Do not launch or install artifacts without the applicable user authorization.
+
+## Release
+
+Releases deliberately skip Developer ID and notarization, so Gatekeeper blocks the first launch; that is accepted. A release is a stable version (no `-preview.` or `-nightly.`), which embeds the `drenkas/sigma-t3` update feed, and the same unsigned path signs it with `SIGMA_PREVIEW_SIGNING_IDENTITY`. Keep that identity across releases: Squirrel.Mac only installs an update whose designated requirement matches the running app.
+
+1. Commit `node scripts/update-release-package-versions.ts <version>` to `main` and push. Fork versions stay independent of upstream's and survive upstream merges.
+2. In `../sigma-t3-build`, check out that commit, copy `.env`/`.env.local`, run `pnpm install --frozen-lockfile`, then build with the preview command above using `--target zip --build-version <version>` and `SIGMA_PREVIEW_SIGNING_IDENTITY` set.
+3. Verify the app with `codesign --verify --deep --strict` and check that `Contents/Resources/app-update.yml` names the fork.
+4. `gh release create v<version> --target <full commit sha>` with the ZIP, its blockmap, and `latest-mac.yml`. Installed releases update from the latest non-prerelease.
 
 ## Publication boundaries
 
 GitHub Actions stays disabled until its jobs are reviewed. Preserve upstream publication guards; the upstream release workflow also publishes npm/mobile/AUR/hosted services and must not be repointed wholesale. Both server and generated npm launcher manifests are private. Standalone install scripts fail before network or disk changes; no standalone CLI channel is released. CLI release lookup defaults to the fork only.
 
-Future own Electron releases use generated platform YAML, ZIP and blockmaps; the old Sigma Tauri `latest.json` process does not apply. Publish only reviewed assets from the exact verified fork revision after separate approval. Upstream sync never signs, installs, publishes, or changes stored app data.
+Releases use generated platform YAML, ZIP and blockmaps; the old Sigma Tauri `latest.json` process does not apply. Publish only assets built from the exact tagged fork revision. Upstream sync never signs, installs, publishes, or changes stored app data.
 
 ## Privacy and auxiliary runtimes
 
