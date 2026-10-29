@@ -99,6 +99,23 @@ flowchart LR
 
 Every role runs on the model you chose for it, across providers, and each subagent shows up in the lineage graph under its role.
 
+### In the app
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <img src="./docs/readme/lineage-graph.png" alt="Lineage graph of an /orca run with architect, researcher, implementer, tester and reviewer subagents" width="288" />
+      <br />
+      <sub><b>Lineage graph</b> of a real <code>/orca</code> run. Five roles ran on four models from two providers (GPT 6 Astra, GPT 6.1 Terra, Sonnet 5.5, Opus 5.5); dashed lines show context handed back to the coordinator.</sub>
+    </td>
+    <td align="center" valign="top" width="50%">
+      <img src="./docs/readme/voice-input.png" alt="Composer with a live voice input waveform next to the stop and send buttons" width="350" />
+      <br />
+      <sub><b>Voice input</b> in the composer: a live waveform while you dictate. Press Enter to stop, transcribe locally and send.</sub>
+    </td>
+  </tr>
+</table>
+
 ### Where Sigma's changes live
 
 ```mermaid

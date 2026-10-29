@@ -2884,12 +2884,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
-      // Local previews need a fresh signature after Electron's bundle is renamed.
+      // Unsigned builds need a fresh signature after Electron's bundle is renamed.
       // macOS keys TCC grants on the designated requirement, and an ad-hoc one is
       // the per-build cdhash, so a stable local certificate keeps them across rebuilds.
-      ...(!signed && isDesktopPreviewVersion(version)
-        ? { identity: previewSigningIdentity ?? "-", notarize: false }
-        : {}),
+      ...(!signed ? { identity: previewSigningIdentity ?? "-", notarize: false } : {}),
       ...(macSigning ? { entitlements: macSigning.entitlementsPath } : {}),
       ...(macSigning?.provisioningProfilePath
         ? { provisioningProfile: macSigning.provisioningProfilePath }

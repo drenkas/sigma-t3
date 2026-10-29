@@ -595,7 +595,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
-  it.effect("uses ad-hoc signing only for local macOS previews without updater metadata", () =>
+  it.effect("signs unsigned macOS builds locally and omits updater metadata for previews", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig(
         "mac",
@@ -632,8 +632,23 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(stableMac.notarize, false);
       assert.notProperty(stableMac, "sign");
 
+      const unsignedStable = yield* createBuildConfig(
+        "mac",
+        "zip",
+        "0.1.0",
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "arm64",
+        "Apple Development: dev@example.com (TEAMID1234)",
+      );
+      const unsignedStableMac = unsignedStable.mac as Record<string, unknown>;
+      assert.equal(unsignedStableMac.identity, "Apple Development: dev@example.com (TEAMID1234)");
+      assert.equal(unsignedStableMac.notarize, false);
+
       for (const [version, signed] of [
-        ["0.1.0", false],
         ["0.1.0", true],
         ["0.1.0-preview.1", true],
       ] as const) {

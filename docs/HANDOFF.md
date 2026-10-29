@@ -69,7 +69,7 @@ Sigma T3 (`drenkas/sigma-t3`) це форк T3 Code (`pingdotgg/t3code`). Ми �
 - Upstream входить у `main` **лише звичайним merge-комітом**, ніколи squash чи rebase. Автор/комітер `Dmytro Renkas <25162167+drenkas@users.noreply.github.com>`.
 - Робоча гілка `sigma-upstream/<upstream-sha>` від `origin/main`.
 - Конфлікти розв'язуються на користь збереження фіч Sigma:
-  - версії пакетів лишаються `0.1.0-preview.1` (server, desktop, web, contracts);
+  - версії пакетів лишаються власною версією Sigma T3 (зараз `1.0.0`; server, desktop, web, contracts), а не upstream;
   - `"private": true` у `apps/server/package.json`;
   - ідентичність Sigma (назви, схеми, `~/.sigma-t3`, вимкнена телеметрія, порожній hosted Connect);
   - поля форку всередині схем upstream (team roles, `additionalWorkspaceRoots`, speech, `role` у субагентах): тримаємо обидві сторони;
@@ -103,7 +103,7 @@ Standing rule from Dmytro (2026-10-24): the daily sync does not need a PR.
 - Hosted T3 Connect вимкнено як межу форку; повернення лежить в окремій гілці й чекає рішення.
 - Постійних анімацій немає (правило upstream про GPU); у графі лише легкі переходи й пульс статусу.
 - Дрібні зміни власник часто просить вливати в `main` напряму без PR («просто вмерж без pr»). PR відкриваємо, коли власник просить або є питання для огляду.
-- GitHub Actions у форку вимкнено до окремого огляду. Публічних релізів, підпису Developer ID і нотаризації немає; preview збирається локально з ad-hoc підписом і без автооновлення.
+- GitHub Actions у форку вимкнено до окремого огляду. Developer ID і нотаризації свідомо немає: хто хоче, той ставить. Релізи — повноцінні GitHub-релізи `v<версія>` (перший `v1.0.0`) з ZIP, blockmap і `latest-mac.yml`, зібраними локально з підписом Apple Development; через `latest-mac.yml` установлені релізи оновлюються самі. Процедура: [sigma-fork.md](operations/sigma-fork.md#release). Preview (`sigma:preview-install`) — лише локальні збірки без автооновлення.
 - Відповіді власнику українською.
 
 ## 7. Локальне середовище власника (Mac)
@@ -118,7 +118,7 @@ Standing rule from Dmytro (2026-10-24): the daily sync does not need a PR.
 | `~/.sigma-t3/userdata`                | Дані встановленої програми. Справжня база власника: не запускати на ній dev-сервер, не відкривати на запис            |
 | `~/.sigma-t3/dev`                     | Дані dev-режиму (там зараз основні чати, див. розділ 4)                                                               |
 
-Щоденний процес власника: закрити Sigma T3 → `cd ~/Documents/Projects/sigma-t3 && pnpm run sigma:preview-install` → відкрити Sigma T3 з Applications. Скрипт сам бере свіжий `origin/main`, ставить версію `0.1.0-preview.<дата-час UTC>.g<короткий коміт>` (видно в Settings → About, тож одразу ясно, з якого коміту зібрано запущений застосунок), збирає ZIP (DMG на macOS 27 падає на `hdiutil`), перевіряє `codesign` і замінює застосунок (старий іде в Кошик). Агенти тестують свої зміни через `vp run dev` у власних worktree, щоб не заважати власнику.
+Щоденний процес власника: закрити Sigma T3 → `cd ~/Documents/Projects/sigma-t3 && pnpm run sigma:preview-install` → відкрити Sigma T3 з Applications. Скрипт сам бере свіжий `origin/main`, ставить версію `<версія>-preview.<дата-час UTC>.g<короткий коміт>` (видно в Settings → About, тож одразу ясно, з якого коміту зібрано запущений застосунок), збирає ZIP (DMG на macOS 27 падає на `hdiutil`), перевіряє `codesign` і замінює застосунок (старий іде в Кошик). Агенти тестують свої зміни через `vp run dev` у власних worktree, щоб не заважати власнику.
 
 Потрібен Node 24+, pnpm 12.
 
