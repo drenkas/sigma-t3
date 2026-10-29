@@ -8,7 +8,8 @@
 # Env: SIGMA_PREVIEW_BUILD_DIR         build worktree (default: ../sigma-t3-build next to this checkout)
 #      SIGMA_PREVIEW_REF               ref to build (default: origin/main)
 #      SIGMA_PREVIEW_SIGNING_IDENTITY  keychain code-signing identity, e.g. "Apple Development: you@example.com (TEAMID)".
-#                                      Default is ad-hoc, which makes macOS forget the app's permissions on every rebuild.
+#                                      Defaults to the first Apple Development identity in the keychain, else ad-hoc,
+#                                      which makes macOS forget the app's permissions on every rebuild.
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
@@ -69,10 +70,15 @@ if [[ "$VERSION" != *-preview.* ]]; then
   exit 1
 fi
 echo "==> Building ${APP_NAME} ${VERSION} from ${COMMIT}"
-if [[ -n "${SIGMA_PREVIEW_SIGNING_IDENTITY:-}" ]]; then
+if [[ -z "${SIGMA_PREVIEW_SIGNING_IDENTITY:-}" ]]; then
+  SIGMA_PREVIEW_SIGNING_IDENTITY="$(security find-identity -v -p codesigning |
+    sed -n 's/^ *[0-9]*) [0-9A-F]* "\(Apple Development: .*\)"$/\1/p' | head -n 1 || true)"
+fi
+if [[ -n "${SIGMA_PREVIEW_SIGNING_IDENTITY}" ]]; then
+  export SIGMA_PREVIEW_SIGNING_IDENTITY
   echo "    Signing with ${SIGMA_PREVIEW_SIGNING_IDENTITY}"
 else
-  echo "    Signing ad-hoc; set SIGMA_PREVIEW_SIGNING_IDENTITY to keep macOS permissions across rebuilds."
+  echo "    Signing ad-hoc; no Apple Development identity found, so macOS permissions reset on every rebuild."
 fi
 
 "${PNPM[@]}" install --frozen-lockfile
