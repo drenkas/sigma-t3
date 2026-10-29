@@ -147,10 +147,6 @@ const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.map(({ project }) => project.id),
-        // bootstrap reads before locking; racing creates return the winner in a conflict.
-        Effect.catchTags({
-          ProjectConflictError: (conflict) => Effect.succeed(conflict.conflictingProjectId),
-        }),
         Effect.mapError(fail("Could not create the project.")),
       );
   });
