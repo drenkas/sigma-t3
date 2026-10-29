@@ -283,6 +283,12 @@ task, send `/orca` followed by the task, or `/orca` alone for the task you have
 been discussing. The agent plans the work, hands each part to a team role, has a
 separate reviewer check the result, and reports back.
 
+To see orchestration at work first, set up a team with `/roles` and send
+`/orca-demo`. The agent runs a short fixed exercise through every role on its
+real model, which costs money, and asks every agent to work in chat without
+touching your project files. Open the thread's Lineage → Graph on web or desktop
+to watch the roles appear.
+
 Every new conversation starts with its project's team, and the agent can
 delegate a role's work to its model. A model you name in a message still wins.
 The commands must start the message, and the agent needs T3 Code's tools to save

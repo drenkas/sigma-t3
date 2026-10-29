@@ -94,6 +94,26 @@ describe("mobile slash commands", () => {
     },
   );
 
+  it("inserts /orca-demo for the server instead of applying an interaction mode", () => {
+    const items = buildComposerSlashCommandItems({
+      query: "orca-d",
+      atMessageStart: true,
+      hasThread: true,
+      allowInteractionMode: true,
+      selectedProviderStatus: { driver: ProviderDriverKind.make("codex"), slashCommands: [] },
+    });
+    const item = items[0];
+    if (items.length !== 1 || !item) throw new Error("Expected only the orca-demo command");
+    expect(
+      resolveComposerCommandSelection({
+        draftMessage: "/orca-d",
+        trigger: { rangeStart: 0, rangeEnd: 7 },
+        item,
+        allowInteractionMode: true,
+      }),
+    ).toEqual({ text: "/orca-demo ", cursor: 11, interactionMode: null });
+  });
+
   it("still applies the T3 plan command for supported providers", () => {
     const items = buildComposerSlashCommandItems({
       query: "plan",

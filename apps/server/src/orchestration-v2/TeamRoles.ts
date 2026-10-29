@@ -2,6 +2,7 @@ import type { TeamRoles } from "@t3tools/contracts";
 
 const ROLES_COMMAND = /^\/roles(?:\s+([\s\S]*))?$/i;
 const ROLE_COMMAND = /^\/role(?:\s+([\s\S]*))?$/i;
+const ORCA_DEMO_COMMAND = /^\/orca-demo(?:\s+([\s\S]*))?$/i;
 const ORCA_COMMAND = /^\/orca(?:\s+([\s\S]*))?$/i;
 
 /**
@@ -22,12 +23,33 @@ export function teamRolesNote(roles: TeamRoles): string {
 }
 
 /**
- * `/roles`, `/role`, and `/orca` are built-in commands on every client, so the server
- * expands them rather than letting a provider read them as its own slash
+ * `/roles`, `/role`, `/orca`, and `/orca-demo` are built-in commands on every client, so
+ * the server expands them rather than letting a provider read them as its own slash
  * commands. Returns null for any other message.
  */
 export function expandTeamCommand(text: string): string | null {
   const trimmed = text.trim();
+  const demo = ORCA_DEMO_COMMAND.exec(trimmed);
+  if (demo !== null) {
+    const note = demo[1]?.trim() ?? "";
+    return `<t3_orca_command>
+The user ran /orca-demo: a fixed demonstration of orchestration on their team's real models. They already accepted the cost, so do not ask to split or confirm. You are the coordinator.
+Call orchestrator_capabilities first and use its teamRoles. If the team is empty, stop and tell the user to set one up with /roles and then run /orca-demo again. If orchestrator_capabilities is not available, say the demo needs T3 Code's orchestration tools. If a role's provider or model is unavailable, report it; do not substitute a model or simulate a child.
+Chat only, for you and every child (put this in every brief): no reading or changing project files, no scratch files or worktrees, no shell, no installs, no browsing. Children do not delegate.
+First tell the user the demo uses their team's real models and that they can open the thread's Lineage → Graph on web or desktop now to watch the children appear.
+Delegate exactly once to every team role, one after another, with delegate_task (even for your own provider; no native subagents), isolation "shared", mode "wait". Wait for each child's result before starting the next; if a call returns early or fails while the child still runs, follow its next instead of retrying, so no role gets a second child. Pass role = the exact saved role name and target = its providerInstanceId, model, and saved options. Order: architect, researcher, implementer, other roles, tester, reviewer (by name, case-insensitive; keep team order within a group). Carry earlier results forward. Each brief carries the full contract, examples, restrictions, and the relevant earlier output. Each reply stays under 200 words plus at most one small code block.
+Scenario: a standalone TypeScript function formatDuration(seconds: number): string with no dependencies. It accepts only integers 0..3599 inclusive and returns "m:ss" with two second digits; anything else throws RangeError. Examples: 0 → "0:00", 9 → "0:09", 60 → "1:00", 61 → "1:01", 3599 → "59:59"; -1, 3600, 1.5, NaN, and Infinity → RangeError.
+Role duties:
+- architect: propose a minimal algorithm and one risk.
+- researcher: check the contract and examples for ambiguity or missed boundaries.
+- implementer: return the function with a short explanation.
+- any other role: give one bounded finding from its perspective, or "no issue found".
+- tester: trace the candidate by hand against every example (expected vs derived); do not claim to execute it.
+- reviewer: independently give a verdict with at most two findings.
+If a usual role is missing, do that small step yourself (for example, write the candidate when there is no implementer) and say when there was no independent reviewer. Add no extra children, retries, or repair rounds.
+Finish every delegation or cancel it. Then report each role's actual outcome and model, with its child thread link. Show the final function, noting any correction you made separately. Say it was inspected, not executed. Reply in the user's language and end by pointing to Lineage → Graph on web or desktop.
+${note === "" ? "" : `The user added this note; follow it where it does not change the scenario:\n<note>\n${note}\n</note>\n`}</t3_orca_command>`;
+  }
   const orca = ORCA_COMMAND.exec(trimmed);
   if (orca !== null) {
     const task = orca[1]?.trim() ?? "";

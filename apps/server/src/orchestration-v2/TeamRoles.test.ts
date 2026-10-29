@@ -65,6 +65,7 @@ describe("expandTeamCommand", () => {
     const expanded = expandTeamCommand("/orca Ship the release");
     expect(expanded).toContain("<t3_orca_command>");
     expect(expanded).toContain("<task>\nShip the release\n</task>");
+    expect(expandTeamCommand("/orca demo")).toContain("<task>\ndemo\n</task>");
   });
 
   it("expands /orca alone to the task under discussion", () => {
@@ -73,8 +74,24 @@ describe("expandTeamCommand", () => {
     expect(expanded).not.toContain("<task>");
   });
 
+  it.each(["/orca-demo", " \n/OrCa-DeMo\t"])("expands %j to the fixed demo", (text) => {
+    const expanded = expandTeamCommand(text);
+    expect(expanded).toMatch(/^<t3_orca_command>\n[\s\S]*\n<\/t3_orca_command>$/);
+    expect(expanded).not.toBe(expandTeamCommand("/orca"));
+    expect(expanded).not.toContain("<task>");
+    expect(expanded).not.toContain("<note>");
+  });
+
+  it("keeps text after /orca-demo as a note", () => {
+    expect(expandTeamCommand("/orca-demo reply in Ukrainian")).toContain(
+      "<note>\nreply in Ukrainian\n</note>",
+    );
+  });
+
   it("leaves lookalikes of /orca alone", () => {
     expect(expandTeamCommand("/orcax")).toBeNull();
     expect(expandTeamCommand("please /orca")).toBeNull();
+    expect(expandTeamCommand("/orca-demox")).toBeNull();
+    expect(expandTeamCommand("please /orca-demo")).toBeNull();
   });
 });

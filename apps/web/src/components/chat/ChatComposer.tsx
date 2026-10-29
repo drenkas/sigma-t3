@@ -1881,7 +1881,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
-      if (item.command === "roles" || item.command === "role" || item.command === "orca") {
+      if (
+        item.command === "roles" ||
+        item.command === "role" ||
+        item.command === "orca" ||
+        item.command === "orca-demo"
+      ) {
         const replacement = `/${item.command} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
