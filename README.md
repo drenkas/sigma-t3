@@ -1,158 +1,216 @@
+<div align="center">
+
+<img src="./assets/prod/black-macos-1024.png" alt="Sigma T3 logo" width="148" />
+
 # Sigma T3
 
-Sigma T3 is the local-preview fork at [drenkas/sigma-t3](https://github.com/drenkas/sigma-t3), based on [T3 Code](https://github.com/pingdotgg/t3code). See [fork identity and local packaging](./docs/operations/sigma-fork.md) for this fork's setup.
+**A control surface for coding agents, built on [T3 Code](https://github.com/pingdotgg/t3code), with agent teams, a lineage graph, multi-folder projects and local voice input on top.**
 
-The T3 Code installation commands, hosted services, mobile apps, and release links below are retained as **upstream reference**. They install or open official T3 Code, not Sigma T3; this fork currently uses local preview builds.
+[![Based on T3 Code](https://img.shields.io/badge/based%20on-T3%20Code-0B0C10?style=flat-square)](https://github.com/pingdotgg/t3code)
+[![Upstream sync](https://img.shields.io/badge/upstream%20sync-daily-7C8CFF?style=flat-square)](./docs/operations/sigma-upstream-sync.md)
+[![Last commit](https://img.shields.io/github/last-commit/drenkas/sigma-t3?style=flat-square&color=7C8CFF)](https://github.com/drenkas/sigma-t3/commits/main)
+[![Status](https://img.shields.io/badge/status-actively%20maintained-2EA043?style=flat-square)](https://github.com/drenkas/sigma-t3/commits/main)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)](./LICENSE)
 
-## Upstream T3 Code reference
+[What's new](#whats-added-on-top-of-t3-code) ·
+[Upstream sync](#kept-in-step-with-t3-code) ·
+[Getting started](#getting-started) ·
+[Docs](#documentation)
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+</div>
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
+---
 
-## "Wait, what are you selling me?"
+> [!NOTE]
+> **Sigma T3 is actively maintained.** Every change from [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code) is merged in daily with ordinary merge commits, so you get upstream T3 Code's providers, fixes and features together with the additions below. Upstream history is preserved in full.
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+Sigma T3 runs the coding agents already on your machine (Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity and more) from one desktop, web or mobile client. It keeps everything that makes T3 Code good: it's fast, works remotely, uses your own subscriptions and is open. On top of that it adds the tools from the original [Sigma](https://github.com/drenkas/Sigma) project for running **several agents on work that spans several repositories**.
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+## At a glance
 
-## Installation (upstream T3 Code)
+<div align="center">
 
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+| 🔀 Upstream commits merged | 🔁 Upstream merges | ✨ Sigma commits | ⏱️ Behind upstream |
+| :------------------------: | :----------------: | :--------------: | :----------------: |
+|         **1,066**          |       **31**       |      **51**      |       **0**        |
 
-### Command line
+<sub>From the fork point (20 Oct 2026) to 29 Oct 2026.</sub>
+
+</div>
+
+```mermaid
+---
+config:
+  themeVariables:
+    xyChart:
+      backgroundColor: "transparent"
+      plotColorPalette: "#7C8CFF"
+      titleColor: "#8B949E"
+      xAxisLabelColor: "#8B949E"
+      xAxisTitleColor: "#8B949E"
+      xAxisLineColor: "#8B949E"
+      xAxisTickColor: "#8B949E"
+      yAxisLabelColor: "#8B949E"
+      yAxisTitleColor: "#8B949E"
+      yAxisLineColor: "#8B949E"
+      yAxisTickColor: "#8B949E"
+---
+xychart-beta
+    title "Upstream T3 Code commits merged into Sigma T3, per day"
+    x-axis ["Oct 20", "Oct 21", "Oct 22", "Oct 23", "Oct 24", "Oct 25", "Oct 26", "Oct 27", "Oct 28", "Oct 29"]
+    y-axis "Commits" 0 --> 250
+    bar [29, 206, 56, 68, 74, 230, 129, 167, 78, 29]
+```
+
+## What's added on top of T3 Code
+
+|     | Feature                      | What you get                                                                                                                                                                                                                                                                                                  |
+| :-: | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧑‍🤝‍🧑  | **Agent teams**              | `/roles` gives each role (architect, researcher, implementer, reviewer, tester) its own model. Each project has its own team, with an optional default for projects that have none. `/role` changes one role.                                                                                                 |
+| 🎼  | **`/orca` orchestration**    | The agent plans the task, hands each part to the right team role, has a separate reviewer check the result, and reports back with evidence. It does small tasks itself and asks before splitting medium ones.                                                                                                 |
+| 🕸️  | **Lineage graph**            | Shows any thread's parents, forks, subagents and handoffs as an interactive graph. Nodes are coloured and named by role and show the model they ran on, including provider-native and remote subagents. Zoom, pan and Fit are built in.                                                                       |
+| 📁  | **Multi-folder projects**    | A project can span up to 20 folders. The first is the agent's working folder; Claude, Cursor and ACP agents get the rest as additional directories, and Codex gets them as writable roots. Add folders by picking or dropping them, start a project from several folders, and share folders between projects. |
+| 🌿  | **Git in every folder**      | Branch, commit, push/publish and pull for each extra folder, right from the chat details panel. When pull fails it says why, and it rebases diverged local commits, rolling back if they conflict.                                                                                                            |
+| 🎙️  | **Local voice input**        | Dictation runs on the server with Parakeet TDT v3 through sherpa-onnx, so it works from the desktop app, a local browser and remote clients alike. A live waveform shows while you speak, and Enter sends once the transcript is in. The model unloads after five idle minutes.                               |
+|  Σ  | **Own identity & privacy**   | Sigma T3 is its own app (`com.drenkas.sigma-t3`) with its own data in `~/.sigma-t3` and its own URL schemes. It installs beside official T3 Code without touching its data. Telemetry is off by default, and nothing is imported from other installs unless you ask.                                          |
+| 📦  | **One-command local builds** | `pnpm run sigma:preview-install` builds the current `origin/main`, signs it and installs it to `/Applications`. The version names the commit it was built from, and a stable signing identity keeps macOS permissions across rebuilds.                                                                        |
+
+Fork tables migrate separately ([`SigmaMigrations.ts`](./apps/server/src/persistence/SigmaMigrations.ts)), so upstream schema changes always merge cleanly.
+
+### How `/orca` splits a task
+
+```mermaid
+flowchart LR
+    U([You]) -->|"/orca task"| C{{Coordinator}}
+    C -->|plan| A[Architect]
+    C -->|research| R[Researcher]
+    A --> I[Implementer]
+    R --> I
+    I --> T[Tester]
+    T --> V[Reviewer]
+    V -->|evidence| C
+    C -->|report| U
+
+    classDef you fill:#7C8CFF,stroke:#0B0C10,color:#0B0C10
+    classDef coord fill:#0B0C10,stroke:#7C8CFF,color:#ffffff
+    class U you
+    class C coord
+```
+
+Every role runs on the model you chose for it, across providers, and each subagent shows up in the lineage graph under its role.
+
+### Where Sigma's changes live
+
+```mermaid
+---
+config:
+  theme: base
+  themeVariables:
+    pie1: "#7C8CFF"
+    pie2: "#B5BEFF"
+    pie3: "#5F6FE6"
+    pie4: "#D4D9FF"
+    pie5: "#98A4FF"
+    pie6: "#C4CAFF"
+    pie7: "#8B98F5"
+    pieStrokeColor: "#0B0C10"
+    pieStrokeWidth: "2px"
+    pieOpacity: "1"
+    pieOuterStrokeColor: "#0B0C10"
+    pieSectionTextColor: "#0B0C10"
+    pieTitleTextColor: "#8B949E"
+    pieLegendTextColor: "#8B949E"
+---
+pie showData
+    title Files changed by Sigma commits, by area
+    "Server" : 271
+    "Web" : 238
+    "Shared packages" : 145
+    "Mobile" : 89
+    "Assets & branding" : 83
+    "Docs & scripts" : 68
+    "Desktop" : 67
+```
+
+## Kept in step with T3 Code
+
+Sigma T3 follows upstream instead of drifting away from it. Upstream changes land in `main` daily:
+
+```mermaid
+gitGraph
+    commit id: "fork point"
+    branch upstream
+    commit id: "T3 fixes"
+    commit id: "T3 features"
+    checkout main
+    commit id: "agent teams"
+    merge upstream id: "daily merge"
+    checkout upstream
+    commit id: "more T3"
+    checkout main
+    commit id: "lineage graph"
+    commit id: "voice input"
+    merge upstream id: "next merge"
+```
+
+- **Merge commits only.** No squashing or rebasing, so `git log` shows exactly which upstream commit each sync brought in.
+- **Sigma features are kept in conflicts.** Fork fields inside upstream schemas, the Sigma identity and fork migrations stay as they are; upstream's changes go in around them.
+- **Checked before pushing.** Every sync installs from the lockfile and runs typecheck and the affected tests. A conflict that needs a real decision becomes a PR for review instead of a direct merge.
+
+The full routine is in [docs/operations/sigma-upstream-sync.md](./docs/operations/sigma-upstream-sync.md).
+
+## Getting started
+
+> [!IMPORTANT]
+> Sigma T3 has no public releases yet: you build it locally. The install commands, App Store apps and package registry entries for official T3 Code install **T3 Code, not Sigma T3**.
+
+Install and sign in to at least one provider first:
+
+| Provider    | Install                                                                  | Sign in                 |
+| ----------- | ------------------------------------------------------------------------ | ----------------------- |
+| Claude Code | [claude.com/product/claude-code](https://claude.com/product/claude-code) | `claude auth login`     |
+| Codex       | [Codex CLI](https://developers.openai.com/codex/cli)                     | `codex login`           |
+| Cursor      | [Cursor CLI](https://cursor.com/cli)                                     | `agent login`           |
+| Grok Build  | [Grok Build CLI](https://x.ai/cli)                                       | `grok login`            |
+| OpenCode    | [opencode.ai](https://opencode.ai)                                       | `opencode auth login`   |
+| Antigravity | Settings → **Install Antigravity**                                       | **Sign in with Google** |
+
+### Install the macOS app (Apple silicon)
+
+You need the Node version from `engines` in [`package.json`](./package.json) and pnpm 12.
 
 ```bash
-curl -fsSL https://t3.codes/install.sh | sh
+git clone https://github.com/drenkas/sigma-t3.git
+cd sigma-t3
+pnpm run sigma:preview-install
 ```
 
-On Windows, in PowerShell:
+The script builds `origin/main` in a separate `../sigma-t3-build` worktree, checks the signature and replaces `/Applications/Sigma T3.app`; the previous copy goes to the Trash. Run it again whenever you want the latest build. **Settings → About** shows which commit you're running. For signing and packaging details, see [fork identity and local packaging](./docs/operations/sigma-fork.md).
 
-```powershell
-irm https://t3.codes/install.ps1 | iex
-```
+### Run from source
 
-Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
-
-To try it once without installing, run `npx t3@latest` instead.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
+Sigma T3 uses [Vite+](https://viteplus.dev/guide/), so install `vp` first (`curl -fsSL https://vite.plus | bash`, or `irm https://vite.plus/ps1 | iex` on Windows).
 
 ```bash
-winget install T3Tools.T3Code
+vp i          # install dependencies
+vp run dev    # start the server and web app
 ```
 
-#### Windows (`scoop`)
+In a worktree, dev state stays in that worktree's `.t3` folder and doesn't touch your installed app's data.
 
-```bash
-scoop install extras/t3code
-```
+### Mobile and remote access
 
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Debian, Ubuntu (`.deb`)
-
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
-
-```bash
-sudo apt install ./T3-Code-*.deb
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-#### Nix (nixpkgs)
-
-```bash
-nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code
-```
-
-The package is maintained in [nixpkgs](https://github.com/NixOS/nixpkgs/tree/nixos-unstable/pkgs/by-name/t3/t3code)
-and includes the desktop app (`t3code-desktop`) and the `t3` command.
-See [Nix installation](./docs/user/install.md#nix-nixpkgs) for NixOS configuration and updates.
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
+The official T3 Code mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)) connects to a Sigma T3 server like it does to any T3 server, over your local network or Tailscale. Open **Settings → Connections** to pair. See [remote access](./docs/user/remote-access.md).
 
 ## Documentation
 
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [FAQ](./docs/user/faq.md)
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Project settings](./docs/user/project-settings.md)
-- [Appearance preferences](./docs/user/appearance.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
+- **Sigma T3:** [fork identity and local packaging](./docs/operations/sigma-fork.md) · [upstream sync](./docs/operations/sigma-upstream-sync.md) · [agent team, `/roles` and `/orca`](./docs/user/composer.md#agent-team) · [projects with several folders](./docs/user/project-settings.md#projects-with-several-folders) · [voice input](./docs/user/composer.md#voice-input-on-web-and-desktop)
+- **From T3 Code:** [FAQ](./docs/user/faq.md) · [install and first run](./docs/user/install.md) · [permission modes](./docs/user/permission-modes.md) · [keyboard shortcuts](./docs/user/keybindings.md) · [project settings](./docs/user/project-settings.md) · [appearance](./docs/user/appearance.md) · [outside agents over MCP](./docs/user/outside-agents.md) · [source control](./docs/user/source-control.md) · [background service](./docs/user/background-service.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- [Run T3 Code as a background service](./docs/user/background-service.md)
+- **Building from source:** [architecture overview](./docs/internals/overview.md)
 
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
+## Credits
 
-## If you REALLY want to contribute still.... read this first
+Sigma T3 stands on [T3 Code](https://github.com/pingdotgg/t3code) by [T3 Tools](https://t3.codes) and its contributors, and every bit of their work reaches this fork through the daily sync. Please don't report problems with Sigma's own features to the T3 Code maintainers.
 
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
-
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+Released under the [MIT License](./LICENSE).

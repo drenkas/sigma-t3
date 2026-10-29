@@ -218,7 +218,7 @@ export function useComposerMenuItems({
           label: "/model",
           description: "Switch response model for this thread",
         },
-        // The server expands `/roles`, `/role`, and `/orca` only when they open the message.
+        // The server expands `/roles`, `/role`, `/orca`, and `/orca-demo` only when they open the message.
         ...(composerTrigger.rangeStart === 0
           ? ([
               {
@@ -241,6 +241,13 @@ export function useComposerMenuItems({
                 command: "orca",
                 label: "/orca",
                 description: "Run a task in orchestration mode with your agent team",
+              },
+              {
+                id: "slash:orca-demo",
+                type: "slash-command",
+                command: "orca-demo",
+                label: "/orca-demo",
+                description: "Demo orchestration with every team role (real models, costs apply)",
               },
             ] as const)
           : []),
