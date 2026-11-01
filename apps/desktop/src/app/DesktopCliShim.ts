@@ -112,11 +112,13 @@ export const renderCliShim = (input: {
   ].join("\n");
 };
 
+export const COMMAND = "sigma-t3";
+
 export const launcherPath = (environment: DesktopEnvironment.DesktopEnvironment["Service"]) =>
   environment.path.join(
     environment.baseDir,
     "bin",
-    environment.platform === "win32" ? "sigma-t3.cmd" : "sigma-t3",
+    environment.platform === "win32" ? `${COMMAND}.cmd` : COMMAND,
   );
 
 export const install = Effect.gen(function* () {
