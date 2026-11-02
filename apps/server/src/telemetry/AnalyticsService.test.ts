@@ -419,8 +419,12 @@ it.layer(
             },
           }),
         ),
-        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
-        Effect.provide(ManagedPolicy.layerTest()),
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env })),
+            ManagedPolicy.layerTest(),
+          ),
+        ),
       );
       assert.deepEqual(reads, []);
       assert.equal(requests, 0);

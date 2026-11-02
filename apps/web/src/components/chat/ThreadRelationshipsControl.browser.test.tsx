@@ -31,6 +31,7 @@ vi.mock(import("../../state/entities"), () => ({
 vi.mock(import("../../state/environments"), () => ({
   useEnvironment: (() => null) as never,
   useEnvironmentProviders: (() => new Map()) as never,
+  useEnvironments: (() => ({ presentationById: new Map() })) as never,
 }));
 vi.mock(import("../../lib/archivedThreadsState"), () => ({
   useArchivedThreadSnapshots: (() => ({ snapshots: [] })) as never,
