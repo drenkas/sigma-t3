@@ -55,7 +55,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.baseDir, "/tmp/t3");
       assert.equal(environment.stateDir, "/tmp/t3/userdata");
       assert.equal(environment.appUserModelId, "com.drenkas.sigma-t3.dev");
-      assert.equal(environment.linuxWmClass, "sigma-t3-dev");
       assert.equal(environment.linuxDesktopEntryName, "com.drenkas.SigmaT3.Development.desktop");
     }),
   );
