@@ -157,7 +157,7 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   if (command !== `t3 ${subcommand}`) return { command: withArgs(command), launcher: false };
   const onPath = yield* resolveCommandPath("t3");
   if (onPath !== null) {
-    const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
+    const shim = (yield* HostProcess.Environment).SIGMA_T3_CLI_PATH?.trim();
     const fs = yield* FileSystem.FileSystem;
     const real = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => null));
     const shimReal = shim ? yield* real(shim) : null;
