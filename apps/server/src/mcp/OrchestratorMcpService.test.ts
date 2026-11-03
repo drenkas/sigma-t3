@@ -1547,6 +1547,7 @@ describe("OrchestratorMcpService provider resolution", () => {
     Effect.gen(function* () {
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           getThreadRecords: () => Effect.succeed(parentProjection([])),
         }),
@@ -1920,6 +1921,7 @@ describe("OrchestratorMcpService provider resolution", () => {
       };
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           hasReceipt: () => Effect.succeed(false),
           getThreadRecords: (threadId) =>
@@ -3465,6 +3467,7 @@ describe("OrchestratorMcpService thread lookup", () => {
             Layer.provide(
               Layer.mergeAll(
                 NodeServices.layer,
+                NodeCrypto.layer,
                 Layer.mock(ThreadManagementService.ThreadManagementService)({
                   listProjectThreads: () => Effect.succeed([launched, reviewer]),
                 }),

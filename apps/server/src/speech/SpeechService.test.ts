@@ -1,8 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off - Fixture digests match SpeechService's node:crypto hashing.
+import * as NodeCrypto from "node:crypto";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -22,19 +23,16 @@ const makeHarness = Effect.fn("test.makeSpeechService")(function* (
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
-  const crypto = yield* Crypto.Crypto;
   const modelsDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-speech-test-" });
-  const files = yield* Effect.forEach(Object.entries(fileBodies), ([name, body]) =>
-    crypto.digest("SHA-256", body).pipe(
-      Effect.orDie,
-      Effect.map((digest) => ({
-        name,
-        url: `https://models.test/${name}`,
-        sizeBytes: body.byteLength,
-        sha256: name === input.corruptFile ? "0".repeat(64) : Hex.encode(digest),
-      })),
-    ),
-  );
+  const files = Object.entries(fileBodies).map(([name, body]) => ({
+    name,
+    url: `https://models.test/${name}`,
+    sizeBytes: body.byteLength,
+    sha256:
+      name === input.corruptFile
+        ? "0".repeat(64)
+        : NodeCrypto.createHash("sha256").update(body).digest("hex"),
+  }));
   const model: SpeechModel = { id: "test-model", label: "Test model", files };
   const loads: string[] = [];
   const service = yield* SpeechService.makeSpeechService({
