@@ -1,4 +1,5 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
@@ -173,6 +174,7 @@ const sendFor = (
 it.layer(
   Layer.mergeAll(
     NodeServices.layer,
+    NodeCrypto.layer,
     Layer.effect(
       HostProcess.HomeDirectory,
       FileSystem.FileSystem.pipe(
