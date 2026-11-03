@@ -1216,7 +1216,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ...options,
       env: {
         ...options.env,
-        LC_ALL: "C",
+        // English diagnostics without overriding LC_CTYPE, which hooks inherit.
+        LANGUAGE: "C",
       },
     });
 
@@ -4235,15 +4236,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       worktreePath = path.join(parentDir, repoName, directoryName);
     }
-    if (input.newRefName) {
+    const newRefName = input.newRefName;
+    if (newRefName) {
       // Kept apart from the checkout so the shared-config lock only covers the tracking write.
       yield* createBranchAt(
         "GitVcsDriver.createWorktree.createBranch",
-        { cwd: input.cwd, branch: input.newRefName, startPoint: input.refName },
+        { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
         "git worktree add failed",
       );
     }
-    const args = ["worktree", "add", "--", worktreePath, input.newRefName ?? input.refName];
+    const args = ["worktree", "add", "--", worktreePath, newRefName ?? input.refName];
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
 
@@ -4281,6 +4283,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             }
           : {}),
       },
+    ).pipe(
+      Effect.onError(() =>
+        newRefName
+          ? deleteLocalBranch({ cwd: input.cwd, refName: newRefName, force: true }).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("could not remove the branch of a failed worktree", { cause }),
+              ),
+            )
+          : Effect.void,
+      ),
     );
 
     if (progress?.onWorktreeClaimed) {
@@ -4339,7 +4351,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               timeoutMs: null,
               ...(onSubmoduleLine
                 ? {
-                    env: { LC_ALL: "C" },
+                    env: { LANGUAGE: "C" },
                     progress: { onStdoutLine: onSubmoduleLine, onStderrLine: onSubmoduleLine },
                   }
                 : {}),
@@ -4366,7 +4378,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    const newRefName = input.newRefName;
     if (newRefName && base) {
       yield* Effect.gen(function* () {
         yield* writeConfigValue({
