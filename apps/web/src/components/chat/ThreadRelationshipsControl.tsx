@@ -964,6 +964,7 @@ export function ThreadRelationshipsPanel(props: {
             <ThreadLineageGraph
               graph={graph}
               threadId={props.threadId}
+              currentThread={currentThread}
               providers={providers}
               subagents={projection?.subagents}
               onOpenThread={openThread}

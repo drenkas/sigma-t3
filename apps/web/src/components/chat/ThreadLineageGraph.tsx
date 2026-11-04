@@ -10,6 +10,7 @@ import {
 import type {
   OrchestrationV2RemoteTaskChild,
   OrchestrationV2Subagent,
+  OrchestrationV2ThreadShell,
   ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ const SUBTITLES = {
 export function ThreadLineageGraph({
   graph,
   threadId,
+  currentThread,
   providers,
   subagents = [],
   onOpenThread,
@@ -36,6 +38,12 @@ export function ThreadLineageGraph({
 }: {
   graph: ThreadRelationshipGraph;
   threadId: ThreadId;
+  currentThread?:
+    | Pick<
+        OrchestrationV2ThreadShell,
+        "title" | "providerInstanceId" | "modelSelection" | "lineage"
+      >
+    | undefined;
   providers?: ReadonlyArray<ServerProvider> | undefined;
   /** The current thread's subagents; those without a local thread still get a node. */
   subagents?: ReadonlyArray<OrchestrationV2Subagent> | undefined;
@@ -49,6 +57,21 @@ export function ThreadLineageGraph({
       model,
       provider: providers?.find((entry) => entry.instanceId === providerInstanceId),
     }).modelLabel;
+  const subagentNode = (id: string, agent: OrchestrationV2Subagent) => ({
+    id,
+    role: "subagent",
+    title: formatSubagentDisplayTitle(agent.title ?? "Subagent"),
+    subtitle: agent.remoteChild ? `Subagent on ${agent.remoteChild.label}` : SUBTITLES.subagent,
+    model: agent.model === null ? undefined : modelLabel(agent.model, agent.providerInstanceId),
+    status: agent.status === "pending" ? "queued" : agent.status,
+    pendingApproval: false,
+  });
+  // A settled child thread is not loaded here, but its latest projected task still describes it.
+  const childAgents = new Map(
+    subagents.flatMap((agent) =>
+      agent.childThreadId === null ? [] : [[agent.childThreadId, agent] as const],
+    ),
+  );
   const threadless = subagents.filter(
     (agent) => agent.childThreadId === null && ids.has(agent.threadId),
   );
@@ -58,7 +81,11 @@ export function ThreadLineageGraph({
     ),
   );
   const threadNodes = [...ids].map((id) => {
-    const thread = graph.nodes.get(id)?.thread ?? null;
+    const shell = graph.nodes.get(id)?.thread ?? null;
+    const agent = shell ? undefined : childAgents.get(id);
+    if (agent) return subagentNode(id, agent);
+    // The shell leaves an idle subagent child out, so an open one is named by its own projection.
+    const thread = shell ?? (id === threadId ? (currentThread ?? null) : null);
     const row = rows.find((entry) => entry.threadId === id);
     const isSubagent = thread?.lineage.relationshipToParent === "subagent";
     const relationship: keyof typeof SUBTITLES =
@@ -81,21 +108,12 @@ export function ThreadLineageGraph({
       model: thread
         ? modelLabel(thread.modelSelection.model, thread.providerInstanceId)
         : undefined,
-      status: thread ? (thread.activityRunStatus ?? thread.status) : "unavailable",
+      status: shell ? (shell.activityRunStatus ?? shell.status) : thread ? "idle" : "unavailable",
       pendingApproval:
-        thread?.pendingRuntimeRequest != null && thread.pendingRuntimeRequest.kind !== "user_input",
+        shell?.pendingRuntimeRequest != null && shell.pendingRuntimeRequest.kind !== "user_input",
     };
   });
-  const subagentNodes = threadless.map((agent) => ({
-    id: agent.id,
-    role: "subagent",
-    title: formatSubagentDisplayTitle(agent.title ?? "Subagent"),
-    subtitle: agent.remoteChild ? `Subagent on ${agent.remoteChild.label}` : SUBTITLES.subagent,
-    model: agent.model === null ? undefined : modelLabel(agent.model, agent.providerInstanceId),
-    status: agent.status === "pending" ? "queued" : agent.status,
-    pendingApproval: false,
-  }));
-  const nodes = [...threadNodes, ...subagentNodes];
+  const nodes = [...threadNodes, ...threadless.map((agent) => subagentNode(agent.id, agent))];
   const edges = [
     ...graph.edges
       .filter((edge) => ids.has(edge.sourceThreadId) && ids.has(edge.targetThreadId))
@@ -125,7 +143,10 @@ export function ThreadLineageGraph({
       onSelect={(id) => {
         const remote = remoteById.get(id);
         if (remote) onOpenRemote?.(remote);
-        else if (id !== threadId && graph.nodes.get(id as ThreadId)?.missing === false)
+        else if (
+          id !== threadId &&
+          (graph.nodes.get(id as ThreadId)?.missing === false || childAgents.has(id as ThreadId))
+        )
           onOpenThread(id as ThreadId);
       }}
     />

@@ -42,7 +42,7 @@ const edge = (
 });
 
 // The current thread is a fork; its parent also has a missing fork, and the current thread
-// started a subagent that started another one.
+// started a subagent that started another one, plus a finished subagent whose thread isn't loaded.
 const threads = [
   shell("root", null),
   shell("current", "fork"),
@@ -55,18 +55,21 @@ const graph: ThreadRelationshipGraph = {
       (thread) => [thread.id, { threadId: thread.id, thread, missing: false }] as const,
     ),
     ["gone" as ThreadId, { threadId: "gone" as ThreadId, thread: null, missing: true }],
+    ["done" as ThreadId, { threadId: "done" as ThreadId, thread: null, missing: true }],
   ]),
   edges: [
     edge("root", "current", "fork"),
     edge("root", "gone", "fork"),
     edge("current", "helper", "subagent"),
+    edge("current", "done", "subagent"),
     edge("helper", "nested", "subagent"),
     edge("helper", "root", "transfer"),
   ],
 };
 
-// Subagents without a local thread: one running natively, one delegated to a linked environment.
-const threadless = [
+// Subagents without a local thread: one running natively, one delegated to a linked environment,
+// and one that finished in a thread this client hasn't loaded.
+const subagents = [
   {
     id: "node:native",
     threadId: "current",
@@ -86,17 +89,37 @@ const threadless = [
     status: "pending",
     remoteChild: { environmentId: "env:laptop", threadId: "thread:remote", label: "laptop" },
   },
+  // A follow-up task reuses the child thread; the latest one names it.
+  {
+    id: "node:done-first",
+    threadId: "current",
+    childThreadId: "done",
+    title: "First pass",
+    model: "claude-sonnet-5-5",
+    providerInstanceId: "claudeAgent",
+    status: "completed",
+  },
+  {
+    id: "node:done",
+    threadId: "current",
+    childThreadId: "done",
+    title: "Finished helper",
+    model: "claude-sonnet-5-5",
+    providerInstanceId: "claudeAgent",
+    status: "completed",
+  },
 ] as unknown as ReadonlyArray<OrchestrationV2Subagent>;
 
 describe("ThreadLineageGraph", () => {
-  it("draws subagents that have no thread here and opens remote ones on their environment", async () => {
+  it("draws subagents that have no thread here and opens each where it lives", async () => {
+    const opened: Array<string> = [];
     const remote: Array<string> = [];
     await using screen = await render(
       <ThreadLineageGraph
         graph={graph}
         threadId={"current" as ThreadId}
-        subagents={threadless}
-        onOpenThread={() => {}}
+        subagents={subagents}
+        onOpenThread={(threadId) => opened.push(threadId)}
         onOpenRemote={(child) => remote.push(child.threadId)}
       />,
     );
@@ -113,6 +136,14 @@ describe("ThreadLineageGraph", () => {
       screen.getByRole("button", { name: /^Remote helper\. Subagent on laptop\./ }),
     );
     expect(remote).toEqual(["thread:remote"]);
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: /^Finished helper\. Subagent\. Claude Sonnet 5\.5\. completed\./,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /^gone\. Unavailable\./ }));
+    expect(opened).toEqual(["done"]);
   });
 
   it("draws the whole lineage as a tree and opens only available threads", async () => {
@@ -130,7 +161,7 @@ describe("ThreadLineageGraph", () => {
       [...screen.container.querySelectorAll("[data-node]")].map((element) =>
         element.getAttribute("data-node"),
       ),
-    ).toEqual(["root", "current", "helper", "nested", "gone"]);
+    ).toEqual(["root", "current", "helper", "nested", "done", "gone"]);
     await expect.element(screen.getByRole("button", { name: /^root\. Parent\./ })).toBeVisible();
     await expect
       .element(screen.getByRole("button", { name: /^current\. This thread\./ }))
@@ -147,5 +178,24 @@ describe("ThreadLineageGraph", () => {
     await userEvent.click(screen.getByRole("button", { name: /^nested\. Subagent\./ }));
     expect(opened).toEqual(["nested"]);
     await expect.element(screen.getByText("context transfer", { exact: true })).toBeVisible();
+  });
+
+  it("names an open subagent thread the shell left out from its own projection", async () => {
+    await using screen = await render(
+      <ThreadLineageGraph
+        graph={graph}
+        threadId={"done" as ThreadId}
+        currentThread={{ ...shell("done", "subagent"), title: "Finished helper" }}
+        onOpenThread={() => {}}
+      />,
+    );
+
+    await expect
+      .element(
+        screen.getByRole("button", {
+          name: /^Finished helper\. This thread\. done-model\. idle\./,
+        }),
+      )
+      .toHaveAttribute("aria-pressed", "true");
   });
 });
