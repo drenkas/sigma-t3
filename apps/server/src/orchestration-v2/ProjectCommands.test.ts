@@ -1,5 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, EventId, ProjectId, type ProjectScript } from "@t3tools/contracts";
+import {
+  CommandId,
+  EventId,
+  PROJECT_DESCRIPTION_MAX_LENGTH,
+  ProjectId,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 
@@ -161,6 +167,43 @@ describe("planProjectCommand", () => {
           "ProjectCommandInvariantError",
         );
       }
+    });
+  });
+
+  describe("description", () => {
+    const create = (description?: string): ProjectCommand => ({
+      type: "project.create",
+      commandId: CommandId.make("cmd-description-create"),
+      projectId,
+      title: "Capsule",
+      workspaceRoot: "/tmp/capsule",
+      ...(description === undefined ? {} : { description }),
+    });
+    const update = (description?: string): ProjectCommand => ({
+      type: "project.meta.update",
+      commandId: CommandId.make("cmd-description-update"),
+      projectId,
+      ...(description === undefined ? {} : { description }),
+    });
+    const tooLong = "x".repeat(PROJECT_DESCRIPTION_MAX_LENGTH + 1);
+
+    it("carries it on create and update, and leaves it out when omitted", () => {
+      assert.equal(payloadOf(plan(create("Brief"))).description, "Brief");
+      assert.notProperty(payloadOf(plan(create())), "description");
+      const state = { project: row({ description: "Brief" }) };
+      assert.equal(payloadOf(plan(update("New brief"), state)).description, "New brief");
+      assert.equal(payloadOf(plan(update(""), state)).description, "");
+      assert.notProperty(payloadOf(plan(update(), state)), "description");
+    });
+
+    it("rejects a description over the limit, even from an internal caller", () => {
+      const maximal = "x".repeat(PROJECT_DESCRIPTION_MAX_LENGTH);
+      assert.equal(payloadOf(plan(create(maximal))).description, maximal);
+      assert.equal(failureOf(plan(create(tooLong)))._tag, "ProjectCommandInvariantError");
+      assert.equal(
+        failureOf(plan(update(tooLong), { project: row() }))._tag,
+        "ProjectCommandInvariantError",
+      );
     });
   });
 

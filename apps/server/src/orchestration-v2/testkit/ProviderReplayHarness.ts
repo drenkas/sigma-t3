@@ -7,11 +7,13 @@ import type {
   ProviderDriverKind,
   ProviderReplayTranscript,
   ServerSettings as ServerSettingsValue,
+  Project,
   TeamRoles,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -56,6 +58,7 @@ import * as ProviderSwitchService from "../ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "../ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "../ProviderTurnStartService.ts";
 import * as ProviderTurnStartServiceTestkit from "../ProviderTurnStartService.testkit.ts";
+import * as ProjectService from "../../project/ProjectService.ts";
 import * as McpAppModelContext from "../../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../../preview/PreviewAgentActivity.ts";
 import * as RunExecutionService from "../RunExecutionService.ts";
@@ -283,6 +286,8 @@ export function layerWithRegistry<Error>(
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
     readonly teamRoles?: TeamRoles;
+    /** Projects the turn-start service can read; any other id has none. */
+    readonly projects?: ReadonlyArray<Project>;
     readonly projectSettingsOverrides?: ServerSettingsValue["projectSettingsOverrides"];
     readonly managedPolicy?: ManagedPolicyDocument;
   } = {},
@@ -549,7 +554,19 @@ export function layerWithRegistry<Error>(
     layerContinuationWorkerProvided,
     layerCommandOutputHubProvided,
   ).pipe(
-    Layer.provide(ProviderTurnStartServiceTestkit.layer),
+    Layer.provide(
+      options.projects === undefined
+        ? ProviderTurnStartServiceTestkit.layer
+        : Layer.merge(
+            ProviderTurnStartServiceTestkit.layer,
+            Layer.mock(ProjectService.ProjectService)({
+              getById: (projectId) =>
+                Effect.succeed(
+                  Option.fromUndefinedOr(options.projects?.find(({ id }) => id === projectId)),
+                ),
+            }),
+          ),
+    ),
     Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 

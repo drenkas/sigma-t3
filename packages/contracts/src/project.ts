@@ -157,6 +157,12 @@ export const ProjectAdditionalWorkspaceRoots = Schema.Array(TrimmedNonEmptyStrin
   Schema.isMaxLength(20),
 );
 
+/** Markdown brief for a task-scoped project ("capsule"); "" clears it, whitespace is kept verbatim. */
+export const PROJECT_DESCRIPTION_MAX_LENGTH = 16_000;
+export const ProjectDescription = Schema.String.check(
+  Schema.isMaxLength(PROJECT_DESCRIPTION_MAX_LENGTH),
+);
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -169,6 +175,7 @@ export const Project = Schema.Struct({
   // Opt-in because background sync performs network I/O and may move the checkout.
   autoPull: Schema.optional(Schema.Boolean),
   additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
+  description: Schema.optional(ProjectDescription),
   scripts: Schema.Array(ProjectScript),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
@@ -188,6 +195,7 @@ export const ProjectCreatePayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
   additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
+  description: Schema.optional(ProjectDescription),
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
@@ -200,6 +208,7 @@ export const ProjectUpdatePayload = Schema.Struct({
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
   additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
+  description: Schema.optional(ProjectDescription),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),

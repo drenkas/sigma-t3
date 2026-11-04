@@ -50,6 +50,7 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { ProjectDescriptionSettings } from "./ProjectDescriptionSettings";
 import { ProjectFoldersSettings } from "./ProjectFoldersSettings";
 import {
   defaultProjectIcon,
@@ -655,6 +656,10 @@ function ProjectDetail({
           ) : null}
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
+        <ProjectDescriptionSettings
+          members={group.memberProjects}
+          canEdit={(environmentId) => editableIds.has(environmentId)}
+        />
         <ProjectFoldersSettings
           members={group.memberProjects}
           canEdit={(environmentId) => editableIds.has(environmentId)}

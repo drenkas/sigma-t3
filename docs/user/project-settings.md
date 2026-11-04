@@ -263,6 +263,21 @@ remote yet. Claude, Codex,
 Cursor, Grok, Antigravity and ACP agents that support extra folders receive them. OpenCode, Pi
 and Muse only get the working folder.
 
+## Capsules: one project per task
+
+A capsule is a project you create for one task and remove when the task is done. It has a name,
+a brief and the folders the task touches. To create one, open the command palette, choose
+**Add project**, then **Capsule**. Give it the task's name, paste the ticket link and your notes
+into **Brief** (markdown), and add the folders. The first folder is the root: the agent's working
+directory and the only folder that gets diffs and checkpoints. On the desktop app pick folders
+with **Add folders** or drop them from Finder or Explorer; elsewhere type a path and choose
+**Add**.
+
+Every new chat in the capsule starts with the brief and the folder list, so the agent knows the
+task before you write anything. Edit the brief later under **Capsule brief** in Project settings;
+add folders under **Folders** when the task grows. When the task is done, remove the project from
+Project settings. The folders on disk stay as they are.
+
 ## Keep the default branch current
 
 In Source control, enable **Automatically pull** to keep the default-branch checkout up to date

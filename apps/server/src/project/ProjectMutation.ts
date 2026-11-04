@@ -20,6 +20,7 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.additionalWorkspaceRoots === undefined
           ? {}
           : { additionalWorkspaceRoots: mutation.additionalWorkspaceRoots }),
+        ...(mutation.description === undefined ? {} : { description: mutation.description }),
         ...(mutation.createWorkspaceRootIfMissing === undefined
           ? {}
           : { createWorkspaceRootIfMissing: mutation.createWorkspaceRootIfMissing }),
@@ -42,6 +43,7 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
         ...(mutation.additionalWorkspaceRoots === undefined
           ? {}
           : { additionalWorkspaceRoots: mutation.additionalWorkspaceRoots }),
+        ...(mutation.description === undefined ? {} : { description: mutation.description }),
         ...(mutation.projectIcon === undefined ? {} : { projectIcon: mutation.projectIcon }),
         ...(mutation.faviconPath === undefined ? {} : { faviconPath: mutation.faviconPath }),
         ...(mutation.defaultThreadEnvMode === undefined

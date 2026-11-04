@@ -96,5 +96,72 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
         assert.strictEqual(project?.archivedAt, at);
       }),
     );
+
+    it.effect("persists, updates, and clears a description", () =>
+      Effect.gen(function* () {
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const projectId = ProjectId.make("project-description");
+        const at = "2026-03-24T00:00:00.000Z";
+        const event = {
+          eventId: EventId.make("event-description"),
+          aggregateKind: "project" as const,
+          aggregateId: projectId,
+          occurredAt: at,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+        };
+        const descriptionOf = Effect.fn("descriptionOf")(function* () {
+          const row = Option.getOrThrow(yield* projects.get(projectId));
+          const shell = Option.getOrThrow(yield* projects.getShell(projectId));
+          assert.strictEqual(shell.description, row.description);
+          return shell.description;
+        });
+        const created = {
+          projectId,
+          title: "Capsule",
+          workspaceRoot: "/tmp/capsule",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: at,
+          updatedAt: at,
+        };
+        yield* projects.apply({
+          ...event,
+          sequence: 1,
+          type: "project.created",
+          payload: { ...created, description: "Brief\n\nhttps://jira.example/T-1" },
+        });
+        assert.strictEqual(yield* descriptionOf(), "Brief\n\nhttps://jira.example/T-1");
+
+        yield* projects.apply({
+          ...event,
+          sequence: 2,
+          type: "project.meta-updated",
+          payload: { projectId, title: "Renamed", updatedAt: at },
+        });
+        assert.strictEqual(yield* descriptionOf(), "Brief\n\nhttps://jira.example/T-1");
+
+        yield* projects.apply({
+          ...event,
+          sequence: 3,
+          type: "project.meta-updated",
+          payload: { projectId, description: "", updatedAt: at },
+        });
+        assert.strictEqual(yield* descriptionOf(), "");
+
+        const plain = ProjectId.make("project-no-description");
+        yield* projects.apply({
+          ...event,
+          sequence: 4,
+          aggregateId: plain,
+          type: "project.created",
+          payload: { ...created, projectId: plain, workspaceRoot: "/tmp/plain" },
+        });
+        const shell = Option.getOrThrow(yield* projects.getShell(plain));
+        assert.strictEqual(shell.description, "");
+      }),
+    );
   },
 );

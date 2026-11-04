@@ -642,6 +642,97 @@ it.effect("project create rejects folders a project already has unless allowDupl
   }),
 );
 
+it.effect(
+  "project create and update carry the capsule description, and a title-only create refuses it",
+  () =>
+    Effect.gen(function* () {
+      const created: Array<unknown> = [];
+      const updated: Array<unknown> = [];
+      const named: Array<unknown> = [];
+      const project = {
+        id: ProjectId.make("project:capsule"),
+        title: "Capsule",
+        workspaceRoot: "/work/api",
+        additionalWorkspaceRoots: ["/work/web"],
+        description: "Brief",
+        repositoryIdentity: null,
+        faviconPath: null,
+        defaultModelSelection: null,
+        defaultThreadEnvMode: null,
+        autoPull: false,
+        projectIcon: null,
+        scripts: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        deletedAt: null,
+      } satisfies ProjectRecord;
+      const { dependencies } = clientLaunchHarness({
+        runtimeModeCeiling: "full-access",
+        launched: [],
+        projectService: {
+          findActiveByFolders: () => Effect.succeedNone,
+          create: (input) => {
+            created.push(input);
+            return Effect.succeed({ ...project, id: input.projectId });
+          },
+          update: (input) => {
+            updated.push(input);
+            return Effect.succeed({ ...project, description: input.description ?? "Brief" });
+          },
+        },
+      });
+      const toolkit = yield* ProjectToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+            Layer.provide(dependencies),
+            Layer.provide(
+              Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+                namedProjectsRoot: "/work/named",
+                createNamedProject: (input) => {
+                  named.push(input);
+                  return Effect.die("a refused create must not reach the managed folders");
+                },
+              }),
+            ),
+          ),
+        ),
+      );
+      const call = <Name extends "t3_project_create" | "t3_project_update">(
+        name: Name,
+        input: Parameters<typeof toolkit.handle<Name>>[1],
+      ) =>
+        toolkit
+          .handle(name, input)
+          .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+
+      const createResult = yield* call("t3_project_create", {
+        title: "Capsule",
+        workspaceRoot: "/work/api",
+        additionalWorkspaceRoots: ["/work/web"],
+        description: "Brief",
+      });
+      expect(created).toMatchObject([
+        {
+          workspaceRoot: "/work/api",
+          additionalWorkspaceRoots: ["/work/web"],
+          description: "Brief",
+        },
+      ]);
+      expect(createResult.at(-1)?.result).toMatchObject({ description: "Brief" });
+
+      const cleared = yield* call("t3_project_update", { projectId: project.id, description: "" });
+      expect(updated).toMatchObject([{ projectId: project.id, description: "" }]);
+      expect(cleared.at(-1)?.result).toMatchObject({ description: "" });
+
+      const refused = yield* call("t3_project_create", { title: "Capsule", description: "Brief" });
+      expect(refused.at(-1)?.result).toMatchObject({
+        code: "invalid_request",
+        message: expect.stringContaining("description"),
+      });
+      expect(named).toEqual([]);
+    }),
+);
+
 it.effect("a client launches with the fallback for an exhausted default", () =>
   Effect.gen(function* () {
     const launched: ThreadLaunch.ThreadLaunchInput[] = [];

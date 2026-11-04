@@ -169,6 +169,7 @@ export const make = Effect.gen(function* () {
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
     additionalWorkspaceRoots: row.additionalWorkspaceRoots ?? [],
+    description: row.description ?? "",
     projectIcon: row.projectIcon,
     scripts: row.scripts,
     pinnedAt: row.pinnedAt,
@@ -352,6 +353,7 @@ export const make = Effect.gen(function* () {
         title: input.title,
         workspaceRoot,
         ...(additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
+        ...(input.description === undefined ? {} : { description: input.description }),
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
       });
       yield* projectEnrichment.invalidate([workspaceRoot]);
@@ -390,6 +392,7 @@ export const make = Effect.gen(function* () {
           : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
         ...(additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
+        ...(input.description === undefined ? {} : { description: input.description }),
         ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
         ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
         ...(input.defaultThreadEnvMode === undefined

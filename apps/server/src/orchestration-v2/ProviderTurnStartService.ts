@@ -63,6 +63,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+import { capsuleNote } from "./Capsule.ts";
 import { expandTeamCommand, teamRolesNote } from "./TeamRoles.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
@@ -859,6 +860,13 @@ export const layer: Layer.Layer<
         ),
         Effect.orElseSucceed(() => []),
       );
+      const capsule = yield* projects.getById(projection.thread.projectId).pipe(
+        Effect.map(Option.match({ onNone: () => "", onSome: capsuleNote })),
+        Effect.orElseSucceed(() => ""),
+      );
+      const initialNote = [capsule, teamRolesNote(teamRoles)]
+        .filter((part) => part !== "")
+        .join("\n\n");
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
@@ -967,12 +975,12 @@ export const layer: Layer.Layer<
             !acceptedAttempts.some((source) => source.nativeThreadId !== undefined));
         // A native slash command must stay at the start of the prompt, and a
         // delegated child works for its parent rather than leading the team.
-        const teamNote =
+        const startNote =
           nativeThreadHasTurns ||
           userText.trimStart().startsWith("/") ||
           projection.thread.lineage.relationshipToParent === "subagent"
             ? ""
-            : teamRolesNote(teamRoles);
+            : initialNote;
         const legacyRecoveredRunIds = new Set(
           projection.runs
             .filter(
@@ -1043,12 +1051,12 @@ export const layer: Layer.Layer<
           missedRuns,
           missedRunIds,
           nativeThreadHasTurns,
-          teamNote,
+          startNote,
           budget: Effect.gen(function* () {
             return handoffBudget({
               tokenCap,
               modelContextWindow,
-              userText: [teamNote, restartNote, userText]
+              userText: [startNote, restartNote, userText]
                 .filter((part) => part !== "")
                 .join("\n\n"),
               attachments: message.attachments,
@@ -1447,7 +1455,7 @@ export const layer: Layer.Layer<
       }
       const now = yield* DateTime.now;
       const handoffContext = resumedHandoffContext ?? handoffContextForThread(loadedProviderThread);
-      const { handoffUsage, deliveredItemIds, nativeThreadHasTurns, teamNote, budget } =
+      const { handoffUsage, deliveredItemIds, nativeThreadHasTurns, startNote, budget } =
         handoffContext;
       const retryHandoff = resumedRetryHandoff ?? (yield* prepareRetryHandoff(handoffContext));
       const runningProviderThread: OrchestrationV2ProviderThread = {
@@ -1628,7 +1636,7 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [teamNote, delivery.context, sideChatContext, restartNote]
+          const context = [startNote, delivery.context, sideChatContext, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1696,7 +1704,7 @@ export const layer: Layer.Layer<
         retryHandoff.length === 0 &&
         sideChatHandoff === undefined &&
         restartNote === "" &&
-        teamNote === "" &&
+        startNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

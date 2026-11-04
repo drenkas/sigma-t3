@@ -704,3 +704,33 @@ describe("project name composition", () => {
     ]);
   });
 });
+
+describe("capsule brief", () => {
+  it("saves and clears the brief for the checkout it was typed in", async () => {
+    setup();
+    state.projects = state.projects.map((project) => ({ ...project, description: "Old brief" }));
+    await using screen = await mountPanel();
+    const label = "remote · /work/remote";
+    const projectId = ProjectId.make(`project-${remoteId}`);
+
+    await userEvent.fill(
+      screen.container.querySelector<HTMLTextAreaElement>(`[aria-label="${label}"]`)!,
+      "PROJ-1\nnotes",
+    );
+    await userEvent.click(page.getByRole("button", { name: `Save ${label}` }));
+    expect(state.update).toHaveBeenCalledExactlyOnceWith({
+      environmentId: remoteId,
+      input: { projectId, description: "PROJ-1\nnotes" },
+    });
+
+    await userEvent.fill(
+      screen.container.querySelector<HTMLTextAreaElement>(`[aria-label="${label}"]`)!,
+      "",
+    );
+    await userEvent.click(page.getByRole("button", { name: `Save ${label}` }));
+    expect(state.update).toHaveBeenLastCalledWith({
+      environmentId: remoteId,
+      input: { projectId, description: "" },
+    });
+  });
+});

@@ -25,7 +25,10 @@ describe("Sigma migrations", () => {
       yield* runMigrations();
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [[4, "ProjectAdditionalWorkspaceRoots"]],
+        sigma: [
+          [4, "ProjectAdditionalWorkspaceRoots"],
+          [5, "ProjectDescription"],
+        ],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -33,15 +36,18 @@ describe("Sigma migrations", () => {
   it.effect("release id 68 from databases that recorded repository tasks there", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations();
-      yield* sql`DROP TABLE sigma_sql_migrations`;
+      // Such a database predates upstream's own id 68 and the fork's history table.
+      yield* runMigrations({ toMigrationInclusive: 67 });
       yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (68, 'RepositoryTasks')`;
 
       yield* runMigrations();
 
       assert.deepStrictEqual(yield* histories, {
         upstream: migrationManifest,
-        sigma: [[4, "ProjectAdditionalWorkspaceRoots"]],
+        sigma: [
+          [4, "ProjectAdditionalWorkspaceRoots"],
+          [5, "ProjectDescription"],
+        ],
       });
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

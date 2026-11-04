@@ -14,7 +14,12 @@ import {
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
-import { ProjectAdditionalWorkspaceRoots, ProjectScript, StoredProjectIcon } from "./project.ts";
+import {
+  ProjectAdditionalWorkspaceRoots,
+  ProjectDescription,
+  ProjectScript,
+  StoredProjectIcon,
+} from "./project.ts";
 
 export const OrchestrationClientOrigin = Schema.Struct({
   surface: Schema.optional(ClientSurface),
@@ -38,6 +43,7 @@ export const ApplicationProjectCreatedPayload = Schema.Struct({
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
   additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
+  description: Schema.optional(ProjectDescription),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
@@ -59,6 +65,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   autoPull: Schema.optional(Schema.Boolean),
   additionalWorkspaceRoots: Schema.optional(ProjectAdditionalWorkspaceRoots),
+  description: Schema.optional(ProjectDescription),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),

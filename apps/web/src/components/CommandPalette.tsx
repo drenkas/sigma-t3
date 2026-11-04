@@ -70,6 +70,7 @@ import {
   FoldersIcon,
   MessageSquareDashedIcon,
   LinkIcon,
+  PackageIcon,
   MessageSquareIcon,
   PaletteIcon,
   RotateCcwIcon,
@@ -266,6 +267,12 @@ import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import {
+  type CreateAndOpenProjectInput,
+  type CreateAndOpenProjectOutcome,
+  useCreateAndOpenProject,
+} from "../hooks/useCreateAndOpenProject";
+import { CreateCapsuleDialog } from "./CreateCapsuleDialog";
 import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -305,6 +312,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const openChildSearch = (mode: "files" | "content", context: CommandPaletteReturnContext) =>
     dispatchCommandPalette({ _tag: "OpenChildSearch", mode, context });
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
+  // Lives out here because the palette popup remounts per session and closes itself.
+  const [capsuleRequest, setCapsuleRequest] = useState<{
+    readonly environmentId: EnvironmentId;
+  } | null>(null);
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
@@ -329,8 +340,15 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen={setOpen}
           openChildSearch={openChildSearch}
           initialContext={state.restoredSearch}
+          onCreateCapsule={(environmentId) => setCapsuleRequest({ environmentId })}
         />
       </CommandDialog>
+      {capsuleRequest ? (
+        <CreateCapsuleDialog
+          environmentId={capsuleRequest.environmentId}
+          onClose={() => setCapsuleRequest(null)}
+        />
+      ) : null}
     </ComposerHandleContext>
   );
 }
@@ -345,6 +363,7 @@ function CommandPaletteDialog(props: {
     context: CommandPaletteReturnContext,
   ) => void;
   readonly initialContext: CommandPaletteReturnContext | undefined;
+  readonly onCreateCapsule: (environmentId: EnvironmentId) => void;
 }) {
   const composerHandleRef = useComposerHandleContext();
 
@@ -386,6 +405,7 @@ function CommandPaletteDialog(props: {
           setOpen={props.setOpen}
           openChildSearch={props.openChildSearch}
           initialContext={props.initialContext}
+          onCreateCapsule={props.onCreateCapsule}
         />
       )}
     </CommandDialogPopup>
@@ -400,6 +420,7 @@ function OpenCommandPaletteDialog(props: {
     context: CommandPaletteReturnContext,
   ) => void;
   readonly initialContext: CommandPaletteReturnContext | undefined;
+  readonly onCreateCapsule: (environmentId: EnvironmentId) => void;
 }) {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -438,12 +459,10 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
-  const createProject = useAtomCommand(projectEnvironment.create, {
-    reportFailure: false,
-  });
   const updateProject = useOrchestrationCommand(projectEnvironment.update, {
     label: "project unarchive",
   });
+  const createAndOpenProjectCommand = useCreateAndOpenProject();
   const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
   const startTriage = useStartTriage();
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
@@ -1046,6 +1065,17 @@ function OpenCommandPaletteDialog(props: {
         keepOpen: true,
         run: async () => {
           await startAddProjectBrowse(environmentId, "folders");
+        },
+      },
+      {
+        kind: "action",
+        value: `action:add-project:${environmentId}:capsule`,
+        searchTerms: ["capsule", "task", "brief", "folders"],
+        title: "Capsule",
+        description: "Name, brief and folders for one task",
+        icon: <PackageIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          props.onCreateCapsule(environmentId);
         },
       },
     ];
@@ -1847,66 +1877,13 @@ function OpenCommandPaletteDialog(props: {
     return cwd.length === 0 ? null : cwd;
   };
 
-  const createAndOpenProject = async (input: {
-    readonly environmentId: EnvironmentId;
-    readonly workspaceRoot: string;
-    readonly additionalWorkspaceRoots: ReadonlyArray<string>;
-    readonly createWorkspaceRootIfMissing: boolean;
-    readonly title?: string;
-  }): Promise<void> => {
-    if (!readEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope)) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Cannot add project",
-          description: "This connection cannot add projects.",
-        }),
-      );
-      return;
-    }
-    const projectId = newProjectId();
-    const createResult = await createProject({
-      environmentId: input.environmentId,
-      input: {
-        projectId,
-        title: input.title ?? inferProjectTitleFromPath(input.workspaceRoot),
-        workspaceRoot: input.workspaceRoot,
-        createWorkspaceRootIfMissing: input.createWorkspaceRootIfMissing,
-        ...(input.additionalWorkspaceRoots.length > 0
-          ? { additionalWorkspaceRoots: input.additionalWorkspaceRoots }
-          : {}),
-        defaultModelSelection: null,
-      },
-    });
-    if (createResult._tag === "Failure") {
-      if (!isAtomCommandInterrupted(createResult)) {
-        const error = squashAtomCommandFailure(createResult);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to add project",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      }
-      return;
-    }
-
-    const navigationResult = await settlePromise(() =>
-      handleNewThread(scopeProjectRef(input.environmentId, projectId)),
-    );
-    if (navigationResult._tag === "Failure") {
-      const error = squashAtomCommandFailure(navigationResult);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to add project",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
-      return;
-    }
-    setOpen(false);
+  const createAndOpenProject = async (
+    input: CreateAndOpenProjectInput,
+  ): Promise<CreateAndOpenProjectOutcome> => {
+    const outcome = await createAndOpenProjectCommand(input);
+    // A project that exists must not be created again from this palette session.
+    if (outcome.status !== "not-created") setOpen(false);
+    return outcome;
   };
 
   const handleAddProjectForEnvironment = async (input: {
@@ -2023,23 +2000,20 @@ function OpenCommandPaletteDialog(props: {
     const [workspaceRoot = "", ...additionalWorkspaceRoots] = addProjectFoldersFlow.folders;
     foldersProjectSubmittingRef.current = true;
     setIsCreatingFoldersProject(true);
-    try {
-      await createAndOpenProject({
-        environmentId: addProjectFoldersFlow.environmentId,
-        workspaceRoot,
-        additionalWorkspaceRoots,
-        createWorkspaceRootIfMissing: false,
-        title: uniqueProjectTitle(
-          inferProjectTitleFromPath(workspaceRoot),
-          projects
-            .filter((project) => project.environmentId === addProjectFoldersFlow.environmentId)
-            .map((project) => project.title),
-        ),
-      });
-    } finally {
-      foldersProjectSubmittingRef.current = false;
-      setIsCreatingFoldersProject(false);
-    }
+    await createAndOpenProject({
+      environmentId: addProjectFoldersFlow.environmentId,
+      workspaceRoot,
+      additionalWorkspaceRoots,
+      createWorkspaceRootIfMissing: false,
+      title: uniqueProjectTitle(
+        inferProjectTitleFromPath(workspaceRoot),
+        projects
+          .filter((project) => project.environmentId === addProjectFoldersFlow.environmentId)
+          .map((project) => project.title),
+      ),
+    });
+    foldersProjectSubmittingRef.current = false;
+    setIsCreatingFoldersProject(false);
   });
 
   const newProjectPublishTargets =

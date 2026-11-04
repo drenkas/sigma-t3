@@ -313,13 +313,14 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           if (
             input.scripts !== undefined ||
             input.additionalWorkspaceRoots !== undefined ||
+            input.description !== undefined ||
             input.createWorkspaceRootIfMissing !== undefined ||
             input.defaultModelSelection !== undefined
           )
             return yield* new OrchestratorMcpFailure({
               code: "invalid_request",
               message:
-                "A project started from its title takes only a title; set scripts, additionalWorkspaceRoots or defaultModelSelection afterwards with t3_project_update.",
+                "A project started from its title takes only a title; set scripts, additionalWorkspaceRoots, description or defaultModelSelection afterwards with t3_project_update.",
             });
           const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
           const created = yield* folders.createNamedProject({ name: input.title }).pipe(

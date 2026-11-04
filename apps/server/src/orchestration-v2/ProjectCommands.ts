@@ -6,6 +6,7 @@ import {
   type ProjectIconOverride,
   ProjectId,
   type ProjectScript,
+  PROJECT_DESCRIPTION_MAX_LENGTH,
   SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
 } from "@t3tools/contracts";
@@ -23,6 +24,7 @@ export interface ProjectCreateCommand {
   readonly title: string;
   readonly workspaceRoot: string;
   readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
+  readonly description?: string;
   readonly scripts?: ReadonlyArray<ProjectScript>;
 }
 
@@ -36,6 +38,7 @@ export interface ProjectMetaUpdateCommand {
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
   readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
+  readonly description?: string;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
@@ -99,6 +102,9 @@ const hasDistinctAdditionalRoots = (
   return !folders.has(root) && folders.size === additionalWorkspaceRoots.length;
 };
 
+const descriptionTooLong = (description: string | undefined) =>
+  description !== undefined && description.length > PROJECT_DESCRIPTION_MAX_LENGTH;
+
 const monogramSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
@@ -143,6 +149,11 @@ export function planProjectCommand(input: {
       if (!hasDistinctAdditionalRoots(command.workspaceRoot, additionalWorkspaceRoots)) {
         return invariant("Additional folders must be distinct and differ from the project root.");
       }
+      if (descriptionTooLong(command.description)) {
+        return invariant(
+          `Project descriptions must be at most ${PROJECT_DESCRIPTION_MAX_LENGTH} characters.`,
+        );
+      }
       return Result.succeed({
         ...base,
         type: "project.created",
@@ -151,6 +162,7 @@ export function planProjectCommand(input: {
           title: command.title,
           workspaceRoot: command.workspaceRoot,
           ...(command.additionalWorkspaceRoots === undefined ? {} : { additionalWorkspaceRoots }),
+          ...(command.description === undefined ? {} : { description: command.description }),
           defaultModelSelection: null,
           faviconPath: null,
           projectIcon: null,
@@ -188,6 +200,11 @@ export function planProjectCommand(input: {
       ) {
         return invariant("Additional folders must be distinct and differ from the project root.");
       }
+      if (descriptionTooLong(command.description)) {
+        return invariant(
+          `Project descriptions must be at most ${PROJECT_DESCRIPTION_MAX_LENGTH} characters.`,
+        );
+      }
       return Result.succeed({
         ...base,
         type: "project.meta-updated",
@@ -205,6 +222,7 @@ export function planProjectCommand(input: {
           ...(command.additionalWorkspaceRoots === undefined
             ? {}
             : { additionalWorkspaceRoots: command.additionalWorkspaceRoots }),
+          ...(command.description === undefined ? {} : { description: command.description }),
           ...(command.faviconPath === undefined ? {} : { faviconPath: command.faviconPath }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),

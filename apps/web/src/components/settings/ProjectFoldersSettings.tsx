@@ -60,7 +60,7 @@ export function ProjectFoldersSettings({
 }
 
 /** Folders dropped from Finder or Explorer; a browser without the desktop bridge sees no paths. */
-function droppedFolderPaths(event: DragEvent): ReadonlyArray<string> {
+export function droppedFolderPaths(event: DragEvent): ReadonlyArray<string> {
   const getPathForFile = window.desktopBridge?.getPathForFile;
   if (!getPathForFile) return [];
   return Array.from(event.dataTransfer.items).flatMap((item) => {

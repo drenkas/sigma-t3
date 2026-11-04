@@ -47,6 +47,7 @@ export interface CreateProjectInput extends CommandMetadata {
   readonly workspaceRoot: string;
   readonly createWorkspaceRootIfMissing?: boolean;
   readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
+  readonly description?: string;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
 }
@@ -58,6 +59,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly defaultModelSelection?: ModelSelection | null;
   readonly autoPull?: boolean;
   readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
+  readonly description?: string;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly faviconPath?: string | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
@@ -320,6 +322,7 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly workspaceRoot: string;
         readonly createWorkspaceRootIfMissing?: boolean;
         readonly additionalWorkspaceRoots?: ReadonlyArray<string>;
+        readonly description?: string;
         readonly defaultModelSelection?: ModelSelection | null;
         readonly scripts?: ReadonlyArray<ProjectScript>;
       }
@@ -329,6 +332,7 @@ const mutateProject = Effect.fn("EnvironmentCommands.mutateProject")(function* (
         readonly projectId: ProjectId;
         readonly title?: string;
         readonly workspaceRoot?: string;
+        readonly description?: string;
         readonly defaultModelSelection?: ModelSelection | null;
         readonly scripts?: ReadonlyArray<ProjectScript>;
       }
@@ -357,6 +361,7 @@ export const createProject = Effect.fn("EnvironmentCommands.createProject")(func
     ...(input.additionalWorkspaceRoots === undefined
       ? {}
       : { additionalWorkspaceRoots: input.additionalWorkspaceRoots }),
+    ...(input.description === undefined ? {} : { description: input.description }),
     ...(input.defaultModelSelection === undefined
       ? {}
       : { defaultModelSelection: input.defaultModelSelection }),
@@ -380,6 +385,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
     ...(input.additionalWorkspaceRoots === undefined
       ? {}
       : { additionalWorkspaceRoots: input.additionalWorkspaceRoots }),
+    ...(input.description === undefined ? {} : { description: input.description }),
     ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
     ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
     ...(input.defaultThreadEnvMode === undefined

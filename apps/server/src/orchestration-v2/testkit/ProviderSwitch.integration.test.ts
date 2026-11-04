@@ -562,6 +562,146 @@ describe("orchestration v2 provider switching", () => {
       ),
   );
 
+  it.live.each([false, true] as const)(
+    "opens a conversation with its project's capsule note (team: %s)",
+    (withTeam) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cwd = yield* checkpointWorkspace(`capsule-${withTeam}`);
+          const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+          const registry = ProviderAdapterRegistry.layerFromAdapters([
+            makeTestAdapter({
+              instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+              driver: CLAUDE_DRIVER,
+              capabilities: ClaudeProviderCapabilitiesV2,
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              responseByRunOrdinal: {},
+              capturedTurns,
+            }),
+          ]);
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            const createThread = Effect.fn("createThread")(function* (id: ThreadId) {
+              yield* orchestrator.dispatch({
+                type: "thread.create",
+                commandId: CommandId.make(`capsule:create:${id}`),
+                threadId: id,
+                projectId,
+                createdBy: "user",
+                creationSource: "web",
+                title: "Capsule",
+                modelSelection: CLAUDE_MODEL_SELECTION,
+                runtimeMode: "full-access",
+                interactionMode: "default",
+                branch: null,
+                worktreePath: null,
+              });
+            });
+            const run = Effect.fn("run")(function* (id: ThreadId, ordinal: number, text: string) {
+              yield* orchestrator.dispatch({
+                type: "message.dispatch",
+                commandId: CommandId.make(`capsule:${id}:${ordinal}`),
+                threadId: id,
+                messageId: MessageId.make(`capsule:${id}:${ordinal}`),
+                createdBy: "user",
+                creationSource: "web",
+                text,
+                attachments: [],
+                modelSelection: CLAUDE_MODEL_SELECTION,
+                dispatchMode: { type: "start_immediately" },
+              });
+              yield* orchestrator.streamStoredEvents.pipe(
+                Stream.filter(
+                  ({ event }) =>
+                    event.type === "run.updated" &&
+                    event.threadId === id &&
+                    event.payload.ordinal === ordinal &&
+                    event.payload.status === "completed",
+                ),
+                Stream.runHead,
+              );
+              yield* worker.drain();
+              return (yield* Ref.get(capturedTurns)).at(-1)!.text;
+            });
+
+            yield* createThread(threadId);
+            const first = yield* run(threadId, 1, "Plan the release");
+            assert.include(first, "<t3_capsule>");
+            assert.include(first, "Fix login.\nhttps://jira.example/PROJ-123");
+            assert.include(first, `- ${cwd} (workspace root, your working directory)`);
+            assert.include(first, "- /work/web (additional folder)");
+            if (withTeam) {
+              assert.include(first, "- reviewer (providerInstanceId codex, model gpt-5.5)");
+              assert.isBelow(first.indexOf("<t3_capsule>"), first.indexOf("<t3_team_roles>"));
+            } else {
+              assert.notInclude(first, "<t3_team_roles>");
+            }
+            assert.include(first, "Plan the release");
+            assert.equal(
+              (yield* orchestrator.getThreadProjection(threadId)).messages.at(-1)?.text,
+              "Plan the release",
+            );
+
+            const second = yield* run(threadId, 2, "Continue");
+            assert.notInclude(second, "<t3_capsule>");
+            assert.notInclude(second, "<t3_team_roles>");
+
+            const slashThread = ThreadId.make("thread:provider-switch:capsule-slash");
+            yield* createThread(slashThread);
+            const slash = yield* run(slashThread, 1, "/status");
+            assert.notInclude(slash, "<t3_capsule>");
+          }).pipe(
+            Effect.provide(
+              ProviderReplayHarness.layerWithRegistry(
+                {
+                  name: "capsule",
+                  runtimePolicyOverride: {
+                    cwd,
+                    approvalPolicy: "never",
+                    sandboxPolicy: { type: "readOnly" },
+                  },
+                },
+                registry,
+                {
+                  ...(withTeam
+                    ? {
+                        teamRoles: [
+                          {
+                            role: "reviewer",
+                            providerInstanceId: ProviderInstanceId.make("codex"),
+                            model: "gpt-5.5",
+                          },
+                        ],
+                      }
+                    : {}),
+                  projects: [
+                    {
+                      id: projectId,
+                      title: "PROJ-123 login fix",
+                      workspaceRoot: cwd,
+                      additionalWorkspaceRoots: ["/work/web"],
+                      description: "Fix login.\nhttps://jira.example/PROJ-123",
+                      repositoryIdentity: null,
+                      faviconPath: null,
+                      defaultModelSelection: null,
+                      defaultThreadEnvMode: null,
+                      autoPull: false,
+                      projectIcon: null,
+                      scripts: [],
+                      createdAt: "2026-03-24T00:00:00.000Z",
+                      updatedAt: "2026-03-24T00:00:00.000Z",
+                      deletedAt: null,
+                    },
+                  ],
+                },
+              ),
+            ),
+          );
+        }),
+      ),
+  );
+
   it.live.each([
     "compact-native",
     "compact-legacy",
