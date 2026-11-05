@@ -1275,11 +1275,27 @@ describe("UsageService", () => {
   it.live("discovers Pi history in its default home and directory overrides", () =>
     Effect.gen(function* () {
       const { home, settings } = yield* setup;
-      for (const [agentDir, sessionDir, relativeDir] of [
-        [undefined, undefined, ".pi/agent/sessions"],
-        ["~/custom-pi", undefined, "custom-pi/sessions"],
-        ["~/ignored-pi", "~/custom-sessions", "custom-sessions"],
-        ["~/ignored-pi", NodePath.join(home, "absolute-sessions"), "absolute-sessions"],
+      for (const [agentDir, sessionDir, relativeDir, launchArgs, instanceHome, platform] of [
+        [undefined, undefined, ".pi/agent/sessions", undefined],
+        ["~/custom-pi", undefined, "custom-pi/sessions", undefined],
+        ["~/ignored-pi", "~/custom-sessions", "custom-sessions", undefined],
+        ["~/ignored-pi", NodePath.join(home, "absolute-sessions"), "absolute-sessions", undefined],
+        ["~/ignored-pi", undefined, "launch-sessions", "--session-dir ~/launch-sessions"],
+        [
+          "~/ignored-pi",
+          undefined,
+          "instance-home /launch-sessions",
+          "--session-dir ~/launch-sessions",
+          "instance-home ",
+        ],
+        [
+          "~/ignored-pi",
+          undefined,
+          "windows-profile/launch-sessions",
+          "--session-dir ~/launch-sessions",
+          "windows-profile",
+          "win32",
+        ],
       ] as const) {
         const dir = NodePath.join(home, relativeDir);
         yield* Effect.promise(async () => {
@@ -1310,7 +1326,7 @@ describe("UsageService", () => {
           assert.strictEqual(
             summary.sources.find((source) => source.fingerprint.provider === "pi")?.fingerprint
               .resolvedHomePath,
-            dir,
+            yield* Effect.promise(() => NodeFSP.realpath(dir)),
           );
         }).pipe(
           Effect.scoped,
@@ -1318,11 +1334,34 @@ describe("UsageService", () => {
             layerService({
               prefix: "usage-pi-" + relativeDir.replaceAll("/", "-"),
               home,
-              settings,
+              settings:
+                launchArgs === undefined
+                  ? settings
+                  : {
+                      ...settings,
+                      providerInstances: {
+                        ...settings.providerInstances,
+                        [ProviderInstanceId.make("pi")]: {
+                          driver: ProviderDriverKind.make("pi"),
+                          config: { launchArgs },
+                          environment:
+                            instanceHome === undefined
+                              ? []
+                              : [
+                                  {
+                                    name: platform === "win32" ? "USERPROFILE" : "HOME",
+                                    value: NodePath.join(home, instanceHome),
+                                    sensitive: false,
+                                  },
+                                ],
+                        },
+                      },
+                    },
               environment: {
                 PI_CODING_AGENT_DIR: agentDir,
                 PI_CODING_AGENT_SESSION_DIR: sessionDir,
               },
+              platform: platform ?? "linux",
             }),
           ),
           Effect.provideService(HostProcess.HomeDirectory, home),
@@ -2498,6 +2537,7 @@ describe("UsageService", () => {
           await NodeFSP.mkdir(dir, { recursive: true });
           await NodeFSP.writeFile(transcript, content);
         });
+        const resolvedTranscript = yield* Effect.promise(() => NodeFSP.realpath(transcript));
         yield* Effect.gen(function* () {
           const verify = (
             summary: UsageSummary,
@@ -2523,14 +2563,14 @@ describe("UsageService", () => {
           yield* Effect.addFinalizer(() => Effect.sync(() => open.mockRestore()));
           const first = yield* UsageService.make;
           const cold = yield* first.readSummary(WINDOW);
-          assert.isTrue(open.mock.calls.some(([path]) => path === transcript));
+          assert.isTrue(open.mock.calls.some(([path]) => path === resolvedTranscript));
           verify(cold, 20, 20, 1);
           yield* first.awaitPersisted;
           const restarted = yield* UsageService.make;
           open.mockClear();
           verify(yield* first.readSummary(WINDOW), 20, 20, 1);
           verify(yield* restarted.readSummary(WINDOW), 20, 20, 1);
-          assert.isFalse(open.mock.calls.some(([path]) => path === transcript));
+          assert.isFalse(open.mock.calls.some(([path]) => path === resolvedTranscript));
           open.mockRestore();
 
           const append = "\n" + counted(10, 2, 140, 30) + "\n";
