@@ -37,9 +37,11 @@ const isAboveCeilingError = Schema.is(OrchestratorRuntimeModeAboveCeilingError);
 function projectFailure(error: Project.ProjectServiceError) {
   if (error._tag === "ProjectOperationError") return unavailable();
   const message =
-    error._tag === "ProjectNotFoundError"
-      ? "The project was not found."
-      : "The project is not empty; force=true is required to delete it.";
+    error._tag === "ProjectInvalidError"
+      ? error.detail
+      : error._tag === "ProjectNotFoundError"
+        ? "The project was not found."
+        : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 

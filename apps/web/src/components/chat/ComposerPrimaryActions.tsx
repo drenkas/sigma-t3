@@ -36,12 +36,13 @@ interface ComposerPrimaryActionsProps {
   alternateShortcutLabel?: string | null;
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
+  /** Dictation is running; Send finishes it and submits once the transcript lands. */
+  voiceInputActive?: boolean;
   isSendBusy: boolean;
   sendDisabledReason: string | null;
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
-  isRecordingVoice?: boolean;
   canResume?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   isEditingQueuedMessage?: boolean;
@@ -91,12 +92,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   alternateShortcutLabel = null,
   showPlanFollowUpPrompt,
   promptHasText,
+  voiceInputActive = false,
   isSendBusy,
   sendDisabledReason,
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
-  isRecordingVoice = false,
   canResume = false,
   preserveComposerFocusOnPointerDown = false,
   isEditingQueuedMessage = false,
@@ -188,8 +189,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           disabled={
             !canOperateThread ||
             isEnvironmentUnavailable ||
+            isSendDisabled ||
             pendingAction.isResponding ||
-            (pendingAction.isLastQuestion ? !pendingAction.isComplete : !pendingAction.canAdvance)
+            (!voiceInputActive &&
+              (pendingAction.isLastQuestion
+                ? !pendingAction.isComplete
+                : !pendingAction.canAdvance))
           }
         >
           {formatPendingPrimaryActionLabel({
@@ -275,17 +280,15 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const submitLabel = showResume
     ? "Resume thread"
-    : isRecordingVoice
-      ? "Stop recording and send"
-      : isEditingQueuedMessage
-        ? "Update queued message"
-        : compactsBeforeSend
-          ? "Compact and send"
-          : isQueuing
-            ? "Queue message"
-            : isRunning
-              ? "Steer message"
-              : "Submit message";
+    : isEditingQueuedMessage
+      ? "Update queued message"
+      : compactsBeforeSend
+        ? "Compact and send"
+        : isQueuing
+          ? "Queue message"
+          : isRunning
+            ? "Steer message"
+            : "Submit message";
   const submitStatus = isEnvironmentUnavailable
     ? "Environment disconnected"
     : (sendDisabledReason ??

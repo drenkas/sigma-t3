@@ -1016,14 +1016,15 @@ export const LINUX_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
 ] as const;
 
-// node-pty bundles both Darwin architectures; only universal apps need both.
+// Native packages (node-pty, objc-js) ship prebuilds for both Darwin architectures; only universal
+// apps need both. macOS 27 warns that an arm64 app holding x64-only code won't open on macOS 28.
 export function resolveMacFileExclusions(arch?: typeof BuildArch.Type) {
   if (arch === undefined || arch === "universal") {
     return [...MAC_FILE_EXCLUSIONS];
   }
 
   const unusedArch = arch === "arm64" ? "x64" : "arm64";
-  return [...MAC_FILE_EXCLUSIONS, `!**/node_modules/node-pty/prebuilds/darwin-${unusedArch}/**/*`];
+  return [...MAC_FILE_EXCLUSIONS, `!**/node_modules/**/prebuilds/darwin-${unusedArch}/**/*`];
 }
 // Large ASAR sidecars avoid NSIS extracting thousands of loose files during installs and updates.
 export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
@@ -1354,7 +1355,7 @@ export function resolveMacWebAuthnEntitlements(
 
 // The hardened runtime denies camera and microphone to the app and every child
 // process, with no prompt and silent capture, unless the app claims these.
-// Composer voice input and commands run by terminals and agents both need them.
+// Dictation and commands run by terminals and agents both need them.
 const MAC_RUNTIME_ENTITLEMENTS = `    <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
@@ -1442,24 +1443,6 @@ export function resolveFffNativeDependencies(
   );
 }
 
-/** The server loads the speech recognizer addon by name, so only the target's build ships. */
-export function resolveSherpaNativeDependencies(
-  platform: typeof BuildPlatform.Type,
-  arch: typeof BuildArch.Type,
-  version: string,
-): Record<string, string> {
-  const architectures = arch === "universal" ? (["arm64", "x64"] as const) : [arch];
-  const os = platform === "mac" ? "darwin" : platform;
-  return Object.fromEntries(
-    architectures
-      // sherpa-onnx publishes no Windows arm64 build.
-      .filter((architecture) => !(platform === "win" && architecture === "arm64"))
-      .map((architecture) => [`sherpa-onnx-${os}-${architecture}`, version]),
-  );
-}
-
-const SHERPA_ONNX_VERSION = serverPackageJson.optionalDependencies["sherpa-onnx-darwin-arm64"];
-
 // macOS and Linux share one app.asar; stage the union of both bundles' external dependencies.
 export function resolveMergedStageDependencies(input: {
   readonly platform: "mac" | "linux";
@@ -1467,15 +1450,11 @@ export function resolveMergedStageDependencies(input: {
   readonly desktopDependencies: Record<string, string>;
   readonly arch: typeof BuildArch.Type;
   readonly fffNodeVersion: string;
-  readonly sherpaVersion?: string;
 }) {
   return {
     ...selectCliRuntimeExternalDependencies(input.serverDependencies),
     ...input.desktopDependencies,
     ...resolveFffNativeDependencies(input.platform, input.arch, input.fffNodeVersion),
-    ...(input.sherpaVersion === undefined
-      ? {}
-      : resolveSherpaNativeDependencies(input.platform, input.arch, input.sherpaVersion)),
   };
 }
 
@@ -2826,7 +2805,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // Disable smart unpack so native packages' JS/metadata stay archived and avoid slowing NSIS with loose files.
     ...(platform === "win"
       ? { asar: { smartUnpack: false }, asarUnpack: [WINDOWS_NATIVE_ASAR_UNPACK_GLOB] }
-      : {}),
+      : { asarUnpack: ["**/node_modules/@transcribe-cpp/**/*.{dylib,so,so.*}"] }),
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
@@ -3131,7 +3110,6 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   const sidecarDependencies = {
     ...input.runtimeExternalDependencies,
     ...resolveFffNativeDependencies("win", input.arch, input.fffNodeVersion),
-    ...resolveSherpaNativeDependencies("win", input.arch, SHERPA_ONNX_VERSION),
   };
   const sidecarPatchedDependencies = createStagePatchedDependencies(
     input.patchedDependencies,
@@ -3884,7 +3862,6 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
           desktopDependencies: resolvedDesktopRuntimeDependencies,
           arch: options.arch,
           fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
-          sherpaVersion: SHERPA_ONNX_VERSION,
         });
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,

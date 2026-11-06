@@ -39,10 +39,10 @@ import {
   preflightWindowsDesktopBuild,
   renderMacEntitlements,
   renderMacPasskeyEntitlements,
+  resolveMacFileExclusions,
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
-  resolveSherpaNativeDependencies,
   resolveBuildOptions,
   resolveDesktopProductName,
   resolveGitHubPublishConfig,
@@ -757,29 +757,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
   });
 
-  it("stages the speech recognizer build for each target architecture", () => {
-    assert.deepStrictEqual(
-      resolveMergedStageDependencies({
-        platform: "mac",
-        serverDependencies: {},
-        desktopDependencies: {},
-        arch: "universal",
-        fffNodeVersion: "0.9.4",
-        sherpaVersion: "1.12.37",
-      }),
-      {
-        "@ff-labs/fff-bin-darwin-arm64": "0.9.4",
-        "@ff-labs/fff-bin-darwin-x64": "0.9.4",
-        "sherpa-onnx-darwin-arm64": "1.12.37",
-        "sherpa-onnx-darwin-x64": "1.12.37",
-      },
-    );
-    assert.deepStrictEqual(resolveSherpaNativeDependencies("win", "x64", "1.12.37"), {
-      "sherpa-onnx-win-x64": "1.12.37",
-    });
-    assert.deepStrictEqual(resolveSherpaNativeDependencies("win", "arm64", "1.12.37"), {});
-  });
-
   it.effect("ships Cursor platform assets outside asar for spawning and native loading", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -831,6 +808,30 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }),
     ),
   );
+
+  it("drops the other architecture's Darwin prebuilds from single-architecture Mac builds", () => {
+    const excludes = (arch: "arm64" | "x64" | "universal", file: string) =>
+      resolveMacFileExclusions(arch).some((glob) => NodePath.matchesGlob(file, glob.slice(1)));
+    const x64 = [
+      "node_modules/node-pty/prebuilds/darwin-x64/pty.node",
+      "node_modules/objc-js/prebuilds/darwin-x64/node.napi.node",
+    ];
+    const arm64 = [
+      "node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
+      "node_modules/objc-js/prebuilds/darwin-arm64/node.napi.armv8.node",
+    ];
+
+    for (const file of x64) {
+      assert.isTrue(excludes("arm64", file), file);
+      assert.isFalse(excludes("x64", file), file);
+      assert.isFalse(excludes("universal", file), file);
+    }
+    for (const file of arm64) {
+      assert.isTrue(excludes("x64", file), file);
+      assert.isFalse(excludes("arm64", file), file);
+      assert.isFalse(excludes("universal", file), file);
+    }
+  });
 
   it.effect("unpacks target Windows natives while excluding the other architecture", () =>
     Effect.scoped(

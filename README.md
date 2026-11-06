@@ -4,7 +4,7 @@
 
 # Sigma T3
 
-**A control surface for coding agents, built on [T3 Code](https://github.com/pingdotgg/t3code), with agent teams, a lineage graph, multi-folder projects and local voice input on top.**
+**A control surface for coding agents, built on [T3 Code](https://github.com/pingdotgg/t3code), with agent teams, a lineage graph and multi-folder projects on top.**
 
 [![Based on T3 Code](https://img.shields.io/badge/based%20on-T3%20Code-0B0C10?style=flat-square)](https://github.com/pingdotgg/t3code)
 [![Upstream sync](https://img.shields.io/badge/upstream%20sync-daily-7C8CFF?style=flat-square)](./docs/operations/sigma-upstream-sync.md)
@@ -71,7 +71,6 @@ xychart-beta
 | 🕸️  | **Lineage graph**            | Shows any thread's parents, forks, subagents and handoffs as an interactive graph. Nodes are coloured and named by role and show the model they ran on, including provider-native and remote subagents. Zoom, pan and Fit are built in.                                                                       |
 | 📁  | **Multi-folder projects**    | A project can span up to 20 folders. The first is the agent's working folder; Claude, Cursor and ACP agents get the rest as additional directories, and Codex gets them as writable roots. Add folders by picking or dropping them, start a project from several folders, and share folders between projects. |
 | 🌿  | **Git in every folder**      | Branch, commit, push/publish and pull for each extra folder, right from the chat details panel. When pull fails it says why, and it rebases diverged local commits, rolling back if they conflict.                                                                                                            |
-| 🎙️  | **Local voice input**        | Dictation runs on the server with Parakeet TDT v3 through sherpa-onnx, so it works from the desktop app, a local browser and remote clients alike. A live waveform shows while you speak, and Enter sends once the transcript is in. The model unloads after five idle minutes.                               |
 |  Σ  | **Own identity & privacy**   | Sigma T3 is its own app (`com.drenkas.sigma-t3`) with its own data in `~/.sigma-t3` and its own URL schemes. It installs beside official T3 Code without touching its data. Telemetry is off by default, and nothing is imported from other installs unless you ask.                                          |
 | 📦  | **One-command local builds** | `pnpm run sigma:preview-install` builds the current `origin/main`, signs it and installs it to `/Applications`. The version names the commit it was built from, and a stable signing identity keeps macOS permissions across rebuilds.                                                                        |
 
@@ -103,15 +102,10 @@ Every role runs on the model you chose for it, across providers, and each subage
 
 <table>
   <tr>
-    <td align="center" valign="top" width="50%">
+    <td align="center" valign="top">
       <img src="./docs/readme/lineage-graph.png" alt="Lineage graph of an /orca run with architect, researcher, implementer, tester and reviewer subagents" width="288" />
       <br />
       <sub><b>Lineage graph</b> of a real <code>/orca</code> run. Five roles ran on four models from two providers (GPT 6 Astra, GPT 6.1 Terra, Sonnet 5.5, Opus 5.5); dashed lines show context handed back to the coordinator.</sub>
-    </td>
-    <td align="center" valign="top" width="50%">
-      <img src="./docs/readme/voice-input.png" alt="Composer with a live voice input waveform next to the stop and send buttons" width="350" />
-      <br />
-      <sub><b>Voice input</b> in the composer: a live waveform while you dictate. Press Enter to stop, transcribe locally and send.</sub>
     </td>
   </tr>
 </table>
@@ -166,7 +160,7 @@ gitGraph
     commit id: "more T3"
     checkout main
     commit id: "lineage graph"
-    commit id: "voice input"
+    commit id: "multi-folder projects"
     merge upstream id: "next merge"
 ```
 
@@ -221,8 +215,8 @@ The official T3 Code mobile app ([iOS](https://apps.apple.com/us/app/t3-code-rem
 
 ## Documentation
 
-- **Sigma T3:** [fork identity and local packaging](./docs/operations/sigma-fork.md) · [upstream sync](./docs/operations/sigma-upstream-sync.md) · [agent team, `/roles` and `/orca`](./docs/user/composer.md#agent-team) · [projects with several folders](./docs/user/project-settings.md#projects-with-several-folders) · [voice input](./docs/user/composer.md#voice-input-on-web-and-desktop)
-- **From T3 Code:** [FAQ](./docs/user/faq.md) · [install and first run](./docs/user/install.md) · [permission modes](./docs/user/permission-modes.md) · [keyboard shortcuts](./docs/user/keybindings.md) · [project settings](./docs/user/project-settings.md) · [appearance](./docs/user/appearance.md) · [outside agents over MCP](./docs/user/outside-agents.md) · [source control](./docs/user/source-control.md) · [background service](./docs/user/background-service.md)
+- **Sigma T3:** [fork identity and local packaging](./docs/operations/sigma-fork.md) · [upstream sync](./docs/operations/sigma-upstream-sync.md) · [agent team, `/roles` and `/orca`](./docs/user/composer.md#agent-team) · [projects with several folders](./docs/user/project-settings.md#projects-with-several-folders)
+- **From T3 Code:** [FAQ](./docs/user/faq.md) · [voice input](./docs/user/voice-input.md) · [install and first run](./docs/user/install.md) · [permission modes](./docs/user/permission-modes.md) · [keyboard shortcuts](./docs/user/keybindings.md) · [project settings](./docs/user/project-settings.md) · [appearance](./docs/user/appearance.md) · [outside agents over MCP](./docs/user/outside-agents.md) · [source control](./docs/user/source-control.md) · [background service](./docs/user/background-service.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 - **Building from source:** [architecture overview](./docs/internals/overview.md)
 
