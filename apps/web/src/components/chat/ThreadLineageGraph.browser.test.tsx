@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import type {
   ThreadRelationshipEdge,
   ThreadRelationshipGraph,
   ThreadRelationshipNode,
 } from "@t3tools/client-runtime/state/thread-relationships";
 import type {
+  EnvironmentId,
   OrchestrationV2Subagent,
   OrchestrationV2ThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
 
-import { render } from "../../../test/render";
+import "~/index.css";
+import { act, render } from "../../../test/render";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { PopoverCreateHandle } from "../ui/popover";
+import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { ThreadLineageGraph } from "./ThreadLineageGraph";
 
 const shell = (
@@ -120,7 +125,10 @@ describe("ThreadLineageGraph", () => {
         threadId={"current" as ThreadId}
         subagents={subagents}
         onOpenThread={(threadId) => opened.push(threadId)}
-        onOpenRemote={(child) => remote.push(child.threadId)}
+        onOpenRemote={(child) => {
+          remote.push(child.threadId);
+          return true;
+        }}
       />,
     );
 
@@ -178,6 +186,67 @@ describe("ThreadLineageGraph", () => {
     await userEvent.click(screen.getByRole("button", { name: /^nested\. Subagent\./ }));
     expect(opened).toEqual(["nested"]);
     await expect.element(screen.getByText("context transfer", { exact: true })).toBeVisible();
+  });
+
+  it("expands into a viewport-sized dialog that closes only when a node opens a thread", async () => {
+    const opened: Array<string> = [];
+    const threadRef = {
+      environmentId: "graph-qa" as EnvironmentId,
+      threadId: "current" as ThreadId,
+    };
+    useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
+    using _panelState = {
+      [Symbol.dispose]: () => useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} }),
+    };
+    await using _screen = await render(
+      <ThreadDetailsCard
+        threadRef={threadRef}
+        anchor={{ current: document.body }}
+        handle={PopoverCreateHandle()}
+        contentKey="graph-qa"
+      >
+        {() => (
+          <ThreadLineageGraph
+            graph={graph}
+            threadId={threadRef.threadId}
+            onOpenThread={(threadId) => opened.push(threadId)}
+          />
+        )}
+      </ThreadDetailsCard>,
+    );
+    await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", true));
+    const expand = page.getByRole("button", { name: "Expand graph" });
+    await expect.element(expand).toBeVisible();
+    const inlineCanvas = document.querySelector<HTMLElement>(
+      '[data-thread-details-card] [role="region"]',
+    )!;
+    const dialog = page.getByRole("dialog", { name: "Lineage graph" });
+
+    await userEvent.click(expand);
+    await expect.element(dialog).toBeVisible();
+    // Neither copy of the tree may borrow the other's arrow markers.
+    const markerIds = [...document.querySelectorAll("marker")].map((marker) => marker.id);
+    expect(new Set(markerIds).size).toBe(markerIds.length);
+    expect(dialog.getByRole("button", { name: "Expand graph" }).elements()).toHaveLength(0);
+    const dialogCanvas = document.querySelector<HTMLElement>(
+      '[data-slot="dialog-popup"] [role="region"]',
+    )!;
+    expect(dialogCanvas.clientHeight).toBeGreaterThan(inlineCanvas.clientHeight);
+    expect(dialogCanvas.clientHeight).toBeGreaterThan(window.innerHeight * 0.6);
+
+    await userEvent.click(dialog.getByRole("button", { name: /^gone\./ }));
+    await expect.element(dialog).toBeVisible();
+    expect(opened).toEqual([]);
+
+    await userEvent.keyboard("{Escape}");
+    await expect.element(dialog).not.toBeInTheDocument();
+    await expect.element(expand).toHaveFocus();
+    expect(document.querySelectorAll("marker").length).toBe(markerIds.length / 2);
+
+    await userEvent.click(expand);
+    await userEvent.click(dialog.getByRole("button", { name: /^nested\. Subagent\./ }));
+    expect(opened).toEqual(["nested"]);
+    await expect.element(dialog).not.toBeInTheDocument();
   });
 
   it("names an open subagent thread the shell left out from its own projection", async () => {

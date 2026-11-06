@@ -969,13 +969,14 @@ export function ThreadRelationshipsPanel(props: {
               subagents={projection?.subagents}
               onOpenThread={openThread}
               onOpenRemote={(child) => {
-                if (!environmentsById.has(child.environmentId)) return;
+                if (!environmentsById.has(child.environmentId)) return false;
                 void navigate({
                   to: "/$environmentId/$threadId",
                   params: buildThreadRouteParams(
                     scopeThreadRef(child.environmentId, child.threadId),
                   ),
                 });
+                return true;
               }}
             />
           ) : null}

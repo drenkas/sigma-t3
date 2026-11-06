@@ -48,7 +48,8 @@ export function ThreadLineageGraph({
   /** The current thread's subagents; those without a local thread still get a node. */
   subagents?: ReadonlyArray<OrchestrationV2Subagent> | undefined;
   onOpenThread: (threadId: ThreadId) => void;
-  onOpenRemote?: ((child: OrchestrationV2RemoteTaskChild) => void) | undefined;
+  /** Returns true when it opened the thread, so the expanded graph can close. */
+  onOpenRemote?: ((child: OrchestrationV2RemoteTaskChild) => boolean) | undefined;
 }) {
   const rows = walkThreadRelationships(graph, threadId);
   const ids = new Set<ThreadId>([threadId, ...rows.map((row) => row.threadId)]);
@@ -142,12 +143,14 @@ export function ThreadLineageGraph({
       selectedId={threadId}
       onSelect={(id) => {
         const remote = remoteById.get(id);
-        if (remote) onOpenRemote?.(remote);
-        else if (
-          id !== threadId &&
-          (graph.nodes.get(id as ThreadId)?.missing === false || childAgents.has(id as ThreadId))
+        if (remote) return onOpenRemote?.(remote) === true;
+        if (
+          id === threadId ||
+          (graph.nodes.get(id as ThreadId)?.missing !== false && !childAgents.has(id as ThreadId))
         )
-          onOpenThread(id as ThreadId);
+          return false;
+        onOpenThread(id as ThreadId);
+        return true;
       }}
     />
   );

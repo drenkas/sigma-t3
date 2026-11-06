@@ -1,9 +1,10 @@
-import { MinusIcon, PlusIcon } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Maximize2Icon, MinusIcon, PlusIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import { Dialog, DialogHeader, DialogPopup, DialogTitle, DialogTrigger } from "../ui/dialog";
 import {
   FAILED_STATUSES,
   layoutExecutionGraph,
@@ -93,6 +94,7 @@ const fitZoom = (viewport: HTMLDivElement, width: number, height: number) =>
 /**
  * The execution tree of agents and the links recorded between them. Draws once per data
  * change and never animates; panning and zooming only move one transformed layer.
+ * Its toolbar expands the same graph into a viewport-sized dialog; that copy mounts only while open.
  */
 export function ExecutionGraph({
   label,
@@ -101,15 +103,22 @@ export function ExecutionGraph({
   treeKinds,
   selectedId,
   onSelect,
+  expanded = false,
 }: {
   label: string;
   nodes: ReadonlyArray<ExecutionGraphNode>;
   edges: ReadonlyArray<ExecutionGraphEdge>;
   treeKinds: ReadonlySet<string>;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  /** Returns true when the selection navigated away, which closes the expanded dialog. */
+  onSelect: (id: string) => boolean | void;
+  /** Fills the height of its parent instead of sizing to the tree; set only by the dialog copy. */
+  expanded?: boolean;
 }) {
   const layout = layoutExecutionGraph(nodes, edges, treeKinds);
+  // Two copies can be on screen at once, and marker ids are document-wide.
+  const markerPrefix = `execution-graph-arrow-${useId().replaceAll(/[^\w-]/g, "")}`;
+  const [dialogOpen, setDialogOpen] = useState(false);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const viewportRef = useRef<HTMLDivElement>(null);
   const movedRef = useRef(false);
@@ -212,275 +221,319 @@ export function ExecutionGraph({
   const waiting = nodes.filter((node) => node.pendingApproval).length;
 
   return (
-    <section aria-label={label} className="space-y-2">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <p role="status" className="text-sm">
-          <strong>{running ? "Live" : "Idle"}</strong>
-          <span className="text-muted-foreground">
-            {` · ${nodes.length} ${nodes.length === 1 ? "node" : "nodes"}`}
-            {running ? ` · ${running} running` : ""}
-            {failed ? ` · ${failed} failed` : ""}
-          </span>
-          {waiting ? (
-            <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning">
-              {waiting} waiting for approval
-            </span>
-          ) : null}
-        </p>
-        <div role="toolbar" aria-label="Graph view" className="flex items-center gap-1">
-          <Button size="icon-xs" variant="ghost" aria-label="Zoom out" onClick={() => zoomBy(0.8)}>
-            <MinusIcon />
-          </Button>
-          <output aria-label="Graph zoom" className="w-10 text-center text-xs tabular-nums">
-            {Math.round(view.zoom * 100)}%
-          </output>
-          <Button size="icon-xs" variant="ghost" aria-label="Zoom in" onClick={() => zoomBy(1.25)}>
-            <PlusIcon />
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => viewportRef.current && fitTo(viewportRef.current)}
-          >
-            Fit
-          </Button>
-        </div>
-      </header>
-      <div
-        ref={viewportRef}
-        role="region"
-        aria-label="Graph canvas. Arrow keys pan; arrow keys on a node move between nodes."
-        tabIndex={0}
-        className="touch-none rounded-lg border border-border bg-muted/20"
-        // Independent of zoom: a height that followed the fitted zoom could toggle the page
-        // scrollbar, change the width and refit forever.
-        // Positioning is inline with the computed geometry, so it holds without the stylesheet.
-        style={{
-          position: "relative",
-          overflow: "hidden",
-          height: `min(60vh, ${layout.height + 16}px)`,
-        }}
-        onKeyDown={panKeys}
-        onPointerDown={(event) => {
-          if ((event.target as Element).closest("button")) return;
-          dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y };
-          setGliding(false);
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          const drag = dragRef.current;
-          if (!drag) return;
-          movedRef.current = true;
-          setView((old) => ({
-            ...old,
-            x: drag.ox + event.clientX - drag.x,
-            y: drag.oy + event.clientY - drag.y,
-          }));
-        }}
-        onPointerUp={() => {
-          dragRef.current = null;
-        }}
-        onPointerCancel={() => {
-          dragRef.current = null;
-        }}
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <section
+        aria-label={label}
+        className={cn("space-y-2", expanded && "flex min-h-0 flex-1 flex-col")}
       >
+        <header className="flex flex-wrap items-center justify-between gap-2">
+          <p role="status" className="text-sm">
+            <strong>{running ? "Live" : "Idle"}</strong>
+            <span className="text-muted-foreground">
+              {` · ${nodes.length} ${nodes.length === 1 ? "node" : "nodes"}`}
+              {running ? ` · ${running} running` : ""}
+              {failed ? ` · ${failed} failed` : ""}
+            </span>
+            {waiting ? (
+              <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-xs text-warning">
+                {waiting} waiting for approval
+              </span>
+            ) : null}
+          </p>
+          <div role="toolbar" aria-label="Graph view" className="flex items-center gap-1">
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Zoom out"
+              onClick={() => zoomBy(0.8)}
+            >
+              <MinusIcon />
+            </Button>
+            <output aria-label="Graph zoom" className="w-10 text-center text-xs tabular-nums">
+              {Math.round(view.zoom * 100)}%
+            </output>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Zoom in"
+              onClick={() => zoomBy(1.25)}
+            >
+              <PlusIcon />
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => viewportRef.current && fitTo(viewportRef.current)}
+            >
+              Fit
+            </Button>
+            {expanded ? null : (
+              <DialogTrigger
+                render={<Button size="icon-xs" variant="ghost" aria-label="Expand graph" />}
+              >
+                <Maximize2Icon />
+              </DialogTrigger>
+            )}
+          </div>
+        </header>
         <div
-          className={
-            gliding
-              ? "transition-transform duration-200 ease-out motion-reduce:transition-none"
-              : ""
-          }
+          ref={viewportRef}
+          role="region"
+          aria-label="Graph canvas. Arrow keys pan; arrow keys on a node move between nodes."
+          tabIndex={0}
+          className="touch-none rounded-lg border border-border bg-muted/20"
+          // Independent of zoom: a height that followed the fitted zoom could toggle the page
+          // scrollbar, change the width and refit forever.
+          // Positioning is inline with the computed geometry, so it holds without the stylesheet.
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            transformOrigin: "0 0",
-            width: layout.width,
-            height: layout.height,
-            transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+            position: "relative",
+            overflow: "hidden",
+            ...(expanded
+              ? { flex: "1 1 0", minHeight: 0 }
+              : { height: `min(60vh, ${layout.height + 16}px)` }),
+          }}
+          onKeyDown={panKeys}
+          onPointerDown={(event) => {
+            if ((event.target as Element).closest("button")) return;
+            dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y };
+            setGliding(false);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const drag = dragRef.current;
+            if (!drag) return;
+            movedRef.current = true;
+            setView((old) => ({
+              ...old,
+              x: drag.ox + event.clientX - drag.x,
+              y: drag.oy + event.clientY - drag.y,
+            }));
+          }}
+          onPointerUp={() => {
+            dragRef.current = null;
+          }}
+          onPointerCancel={() => {
+            dragRef.current = null;
           }}
         >
-          <svg
-            width={layout.width}
-            height={layout.height}
-            aria-hidden="true"
-            className="text-muted-foreground"
-            style={{ position: "absolute", inset: 0 }}
+          <div
+            className={
+              gliding
+                ? "transition-transform duration-200 ease-out motion-reduce:transition-none"
+                : ""
+            }
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              transformOrigin: "0 0",
+              width: layout.width,
+              height: layout.height,
+              transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+            }}
           >
-            <defs>
-              {Object.entries(LINKS).map(([kind, link]) =>
-                link.color === null ? null : (
-                  <marker
-                    key={kind}
-                    id={`execution-graph-arrow-${kind}`}
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="8"
-                    markerHeight="8"
-                    orient="auto-start-reverse"
+            <svg
+              width={layout.width}
+              height={layout.height}
+              aria-hidden="true"
+              className="text-muted-foreground"
+              style={{ position: "absolute", inset: 0 }}
+            >
+              <defs>
+                {Object.entries(LINKS).map(([kind, link]) =>
+                  link.color === null ? null : (
+                    <marker
+                      key={kind}
+                      id={`${markerPrefix}-${kind}`}
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="8"
+                      markerHeight="8"
+                      orient="auto-start-reverse"
+                    >
+                      <path
+                        d="M2 1.5 L8 5 L2 8.5"
+                        fill="none"
+                        stroke={link.color}
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </marker>
+                  ),
+                )}
+              </defs>
+              {layout.edges.map(({ edge, path, tree }) => {
+                const link = LINKS[edge.kind];
+                const color = link?.color ?? null;
+                const end = layout.positions.get(edge.target);
+                return (
+                  <g
+                    key={edge.id}
+                    className={cn(
+                      "transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none",
+                      related(edge) ? "opacity-100" : "opacity-15",
+                    )}
                   >
                     <path
-                      d="M2 1.5 L8 5 L2 8.5"
+                      d={path}
                       fill="none"
-                      stroke={link.color}
-                      strokeWidth="1.6"
+                      stroke={color ?? "currentColor"}
+                      strokeOpacity={tree ? 0.45 : 0.9}
+                      strokeWidth={hover !== null && related(edge) ? 2 : 1.25}
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      strokeDasharray={link?.dash}
+                      markerEnd={color === null ? undefined : `url(#${markerPrefix}-${edge.kind})`}
                     />
-                  </marker>
-                ),
-              )}
-            </defs>
-            {layout.edges.map(({ edge, path, tree }) => {
-              const link = LINKS[edge.kind];
-              const color = link?.color ?? null;
-              const end = layout.positions.get(edge.target);
+                    {tree && end ? (
+                      <circle
+                        cx={end.x}
+                        cy={end.y + NODE_H / 2}
+                        r="2.5"
+                        fill={roleColor(byId.get(edge.target)!.role)}
+                      />
+                    ) : null}
+                  </g>
+                );
+              })}
+            </svg>
+            {layout.order.map(({ id }) => {
+              const node = byId.get(id)!;
+              const point = layout.positions.get(id)!;
+              const color = roleColor(node.role);
               return (
-                <g
-                  key={edge.id}
+                <button
+                  key={id}
+                  type="button"
+                  data-node={id}
+                  aria-pressed={selectedId === id}
+                  aria-label={`${node.title}. ${node.subtitle}.${node.model ? ` ${node.model}.` : ""} ${pretty(node.status)}${node.pendingApproval ? ", waiting for your approval" : ""}.`}
                   className={cn(
-                    "transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none",
-                    related(edge) ? "opacity-100" : "opacity-15",
+                    "flex flex-col items-start gap-0.5 overflow-hidden rounded-lg border py-2 pr-3 pl-3.5 text-left shadow-xs outline-none transition-[opacity,translate,border-color,box-shadow] duration-200 ease-out starting:translate-y-1 starting:opacity-0 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none",
+                    selectedId === id ? "border-primary ring-1 ring-primary" : "border-border",
+                    node.pendingApproval && "border-warning",
+                    FAILED_STATUSES.has(node.status) && "border-destructive/60",
+                    !neighbour(id) && "opacity-40",
                   )}
-                >
-                  <path
-                    d={path}
-                    fill="none"
-                    stroke={color ?? "currentColor"}
-                    strokeOpacity={tree ? 0.45 : 0.9}
-                    strokeWidth={hover !== null && related(edge) ? 2 : 1.25}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeDasharray={link?.dash}
-                    markerEnd={
-                      color === null ? undefined : `url(#execution-graph-arrow-${edge.kind})`
-                    }
-                  />
-                  {tree && end ? (
-                    <circle
-                      cx={end.x}
-                      cy={end.y + NODE_H / 2}
-                      r="2.5"
-                      fill={roleColor(byId.get(edge.target)!.role)}
-                    />
-                  ) : null}
-                </g>
-              );
-            })}
-          </svg>
-          {layout.order.map(({ id }) => {
-            const node = byId.get(id)!;
-            const point = layout.positions.get(id)!;
-            const color = roleColor(node.role);
-            return (
-              <button
-                key={id}
-                type="button"
-                data-node={id}
-                aria-pressed={selectedId === id}
-                aria-label={`${node.title}. ${node.subtitle}.${node.model ? ` ${node.model}.` : ""} ${pretty(node.status)}${node.pendingApproval ? ", waiting for your approval" : ""}.`}
-                className={cn(
-                  "flex flex-col items-start gap-0.5 overflow-hidden rounded-lg border py-2 pr-3 pl-3.5 text-left shadow-xs outline-none transition-[opacity,translate,border-color,box-shadow] duration-200 ease-out starting:translate-y-1 starting:opacity-0 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset motion-reduce:transition-none",
-                  selectedId === id ? "border-primary ring-1 ring-primary" : "border-border",
-                  node.pendingApproval && "border-warning",
-                  FAILED_STATUSES.has(node.status) && "border-destructive/60",
-                  !neighbour(id) && "opacity-40",
-                )}
-                style={{
-                  position: "absolute",
-                  left: point.x,
-                  top: point.y,
-                  width: NODE_W,
-                  height: NODE_H,
-                  // The role colour tints the card; the bar below marks its edge.
-                  backgroundColor: `color-mix(in oklab, ${color} 7%, var(--color-card))`,
-                }}
-                onClick={() => onSelect(id)}
-                onKeyDown={(event) => nodeKeys(event, id)}
-                onPointerEnter={() => setHover(id)}
-                onPointerLeave={() => setHover(null)}
-                onFocus={() => setHover(id)}
-                onBlur={() => setHover(null)}
-              >
-                <span
-                  aria-hidden="true"
                   style={{
                     position: "absolute",
-                    top: 0,
-                    bottom: 0,
-                    left: 0,
-                    width: 3,
-                    backgroundColor: color,
+                    left: point.x,
+                    top: point.y,
+                    width: NODE_W,
+                    height: NODE_H,
+                    // The role colour tints the card; the bar below marks its edge.
+                    backgroundColor: `color-mix(in oklab, ${color} 7%, var(--color-card))`,
                   }}
-                />
-                <span className="w-full truncate text-xs font-medium">{node.title}</span>
-                <span className="flex w-full min-w-0 items-baseline gap-1 text-3xs text-muted-foreground">
-                  <span className="shrink-0">{node.subtitle}</span>
-                  {node.model ? (
-                    <span className="truncate" data-node-model>
-                      · {node.model}
-                    </span>
-                  ) : null}
-                </span>
-                <span
-                  className={cn(
-                    "flex items-center gap-1.5 text-3xs",
-                    node.pendingApproval ? "text-warning" : "text-muted-foreground capitalize",
-                  )}
+                  onClick={() => onSelect(id)}
+                  onKeyDown={(event) => nodeKeys(event, id)}
+                  onPointerEnter={() => setHover(id)}
+                  onPointerLeave={() => setHover(null)}
+                  onFocus={() => setHover(id)}
+                  onBlur={() => setHover(null)}
                 >
                   <span
                     aria-hidden="true"
-                    className={cn(
-                      "size-1.5 shrink-0 rounded-full",
-                      node.pendingApproval
-                        ? "bg-warning motion-safe:animate-status-pulse"
-                        : statusTone(node.status),
-                    )}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      left: 0,
+                      width: 3,
+                      backgroundColor: color,
+                    }}
                   />
-                  {node.pendingApproval ? "Waiting for approval" : pretty(node.status)}
-                </span>
-              </button>
-            );
-          })}
+                  <span className="w-full truncate text-xs font-medium">{node.title}</span>
+                  <span className="flex w-full min-w-0 items-baseline gap-1 text-3xs text-muted-foreground">
+                    <span className="shrink-0">{node.subtitle}</span>
+                    {node.model ? (
+                      <span className="truncate" data-node-model>
+                        · {node.model}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={cn(
+                      "flex items-center gap-1.5 text-3xs",
+                      node.pendingApproval ? "text-warning" : "text-muted-foreground capitalize",
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        node.pendingApproval
+                          ? "bg-warning motion-safe:animate-status-pulse"
+                          : statusTone(node.status),
+                      )}
+                    />
+                    {node.pendingApproval ? "Waiting for approval" : pretty(node.status)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <ul
-        aria-label="Legend"
-        className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
-      >
-        {[...new Map(nodes.map((node) => [node.role.toLowerCase(), node.role])).values()].map(
-          (role) => (
-            <li key={`role:${role}`} className="flex items-center gap-1.5 capitalize">
-              <span
-                aria-hidden="true"
-                className="size-2 rounded-sm"
-                style={{ backgroundColor: roleColor(role) }}
-              />
-              {pretty(role)}
-            </li>
-          ),
-        )}
-        {Object.entries(LINKS)
-          .filter(([kind]) => edges.some((edge) => edge.kind === kind))
-          .map(([kind, link]) => (
-            <li key={kind} className="flex items-center gap-1.5">
-              <svg aria-hidden="true" width="18" height="6">
-                <line
-                  x1="1"
-                  y1="3"
-                  x2="17"
-                  y2="3"
-                  stroke={link.color ?? "currentColor"}
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeDasharray={link.dash}
+        <ul
+          aria-label="Legend"
+          className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
+        >
+          {[...new Map(nodes.map((node) => [node.role.toLowerCase(), node.role])).values()].map(
+            (role) => (
+              <li key={`role:${role}`} className="flex items-center gap-1.5 capitalize">
+                <span
+                  aria-hidden="true"
+                  className="size-2 rounded-sm"
+                  style={{ backgroundColor: roleColor(role) }}
                 />
-              </svg>
-              {link.label}
-            </li>
-          ))}
-      </ul>
-    </section>
+                {pretty(role)}
+              </li>
+            ),
+          )}
+          {Object.entries(LINKS)
+            .filter(([kind]) => edges.some((edge) => edge.kind === kind))
+            .map(([kind, link]) => (
+              <li key={kind} className="flex items-center gap-1.5">
+                <svg aria-hidden="true" width="18" height="6">
+                  <line
+                    x1="1"
+                    y1="3"
+                    x2="17"
+                    y2="3"
+                    stroke={link.color ?? "currentColor"}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeDasharray={link.dash}
+                  />
+                </svg>
+                {link.label}
+              </li>
+            ))}
+        </ul>
+      </section>
+      {expanded ? null : (
+        <DialogPopup className="h-[calc(100dvh-3rem)] sm:h-[calc(100dvh-2rem)] sm:max-w-[min(calc(100vw-2rem),110rem)]">
+          <DialogHeader>
+            <DialogTitle>{label}</DialogTitle>
+          </DialogHeader>
+          <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
+            <ExecutionGraph
+              label={label}
+              nodes={nodes}
+              edges={edges}
+              treeKinds={treeKinds}
+              selectedId={selectedId}
+              expanded
+              onSelect={(id) => {
+                const navigated = onSelect(id) === true;
+                if (navigated) setDialogOpen(false);
+                return navigated;
+              }}
+            />
+          </div>
+        </DialogPopup>
+      )}
+    </Dialog>
   );
 }
