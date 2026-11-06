@@ -134,6 +134,7 @@ const layerTools = Layer.mergeAll(
   Layer.provide(
     Layer.mock(ProjectService.ProjectService)({
       getById: () => Effect.succeedNone,
+      findActiveByFolders: () => Effect.succeedNone,
       create: (input) =>
         Effect.succeed({
           id: input.projectId,

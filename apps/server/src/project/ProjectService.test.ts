@@ -574,7 +574,7 @@ it.layer(layerTest)("ProjectService", (it) => {
           additionalWorkspaceRoots: ["/work/folders-web/"],
         })
         .pipe(Effect.flip);
-      assert.equal(rejected._tag, "ProjectOperationError");
+      assert.equal(rejected._tag, "ProjectInvalidError");
       assert.deepEqual(
         Option.getOrThrow(yield* service.getById(projectId)).additionalWorkspaceRoots,
         ["/work/folders-api", "/work/folders-docs"],
