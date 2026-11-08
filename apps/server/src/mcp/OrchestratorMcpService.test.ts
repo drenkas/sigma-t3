@@ -1648,6 +1648,57 @@ describe("OrchestratorMcpService provider resolution", () => {
           defaultTeamRoles: [reviewer],
         });
 
+        const panel = {
+          ...reviewer,
+          additionalTargets: [
+            { providerInstanceId: codexInstanceId, model: "gpt-5.4-mini", options: [] },
+            { providerInstanceId: codexInstanceId, model: "gpt-5.4" },
+          ],
+        };
+        yield* service.setTeamRoles(scope, { scope: "project", roles: [panel] });
+        assert.deepEqual(yield* team, {
+          teamRoles: [panel],
+          teamRolesSource: "project",
+          defaultTeamRoles: [reviewer],
+        });
+
+        const missing = ProviderInstanceId.make("missing");
+        for (const target of ["project", "default"] as const) {
+          const unknownSecondary = yield* service
+            .setTeamRoles(scope, {
+              scope: target,
+              roles: [
+                {
+                  ...architect,
+                  additionalTargets: [
+                    panel.additionalTargets[0]!,
+                    { providerInstanceId: missing, model: "gpt-5.4" },
+                  ],
+                },
+              ],
+            })
+            .pipe(Effect.flip);
+          assert.equal(unknownSecondary.code, "invalid_request");
+          assert.include(unknownSecondary.message, "architect");
+          assert.include(unknownSecondary.message, "additional target 2");
+          assert.include(unknownSecondary.message, "missing");
+          // Nothing was saved, for the project or the default team.
+          assert.deepEqual(yield* team, {
+            teamRoles: [panel],
+            teamRolesSource: "project",
+            defaultTeamRoles: [reviewer],
+          });
+        }
+
+        yield* service.setTeamRoles(scope, { scope: "project", roles: [] });
+        assert.deepEqual((yield* team).teamRoles, []);
+        yield* service.setTeamRoles(scope, { scope: "project" });
+        assert.deepEqual(yield* team, {
+          teamRoles: [reviewer],
+          teamRolesSource: "default",
+          defaultTeamRoles: [reviewer],
+        });
+
         const unknown = yield* service
           .setTeamRoles(scope, {
             scope: "project",

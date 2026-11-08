@@ -87,7 +87,7 @@ const OrchestratorCapabilitiesTool = Tool.make("orchestrator_capabilities", {
 
 const TeamRolesSetTool = Tool.make("team_roles_set", {
   description:
-    "Save the user's agent team: one model for each role, replacing the saved team. Each project can have its own team, and projects without one use the default team; new conversations start with their project's team, and orchestrator_capabilities returns it as teamRoles. Call it only when the user asked to set up or change the team, such as through /roles or /role, after they confirmed the roles and models. Pass [] for no team.",
+    "Save the user's agent team: one model for each role, or up to three for a role that should give independent perspectives, replacing the saved team. Each project can have its own team, and projects without one use the default team; new conversations start with their project's team, and orchestrator_capabilities returns it as teamRoles. Call it only when the user asked to set up or change the team, such as through /roles or /role, after they confirmed the roles and models. Pass [] for no team.",
   parameters: OrchestratorMcpTeamRolesSetInput,
   success: OrchestratorMcpTeamRolesSetResult,
   failure: OrchestratorMcpFailure,

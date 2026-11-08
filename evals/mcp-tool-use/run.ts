@@ -19,6 +19,7 @@ import {
   DeviceSummary,
   OrchestratorMcpDelegateTaskInput,
   ProviderInstanceId,
+  TeamRoles,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -49,6 +50,10 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { buildCodexAdditionalContext } from "../../apps/server/src/provider/CodexDeveloperInstructions.ts";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
+import {
+  expandTeamCommand,
+  teamRolesNote,
+} from "../../apps/server/src/orchestration-v2/TeamRoles.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
@@ -220,6 +225,23 @@ const McpToolUseExpect = Schema.Struct({
    * files request_secret returned were read. See `SecretExpect` in secret-grading.ts.
    */
   secret: Schema.optional(SecretExpect),
+  /**
+   * One team role fanned out to its models: exactly one successful async `delegate_task` per target,
+   * all launched before any result is read, with an identical `task`, this role, and distinct
+   * `clientRequestId`s. Options match as objects; absent and empty are the same.
+   */
+  fanOut: Schema.optional(
+    Schema.Struct({
+      role: Schema.String,
+      targets: Schema.Array(
+        Schema.Struct({
+          providerInstanceId: Schema.String,
+          model: Schema.String,
+          options: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+        }),
+      ),
+    }),
+  ),
 });
 
 /**
@@ -289,6 +311,11 @@ export const McpToolUseCase = Schema.Struct({
     linkedEnvironments: Schema.optional(Schema.Boolean),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: OrchestratorMcpDelegateTaskInput.fields.role,
+    /**
+     * The project's team. T3's `<t3_team_roles>` note starts a top-level thread without prior turns,
+     * and `orchestrator_capabilities` returns it as `teamRoles`.
+     */
+    teamRoles: Schema.optional(TeamRoles),
     context: Schema.optional(Schema.String),
     priorTurns: Schema.optional(
       Schema.Array(
@@ -1010,10 +1037,17 @@ export const buildMessages = (sample: Sample) => {
     }
     if (turn.text) push(turn.role, text(turn.text));
   }
-  const userText =
+  const composerText =
     testCase.promptContext === undefined
       ? testCase.prompt
       : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext });
+  // As the server does: built-in team commands expand, and a new conversation starts with the team.
+  const commandText = expandTeamCommand(composerText) ?? composerText;
+  const teamNote =
+    role === "top" && priorTurns.length === 0 && !commandText.trimStart().startsWith("/")
+      ? teamRolesNote(testCase.setup.teamRoles ?? [])
+      : "";
+  const userText = [teamNote, commandText].filter((part) => part !== "").join("\n\n");
   const prompt =
     sideChatContext === undefined ? userText : withInlineContext(sideChatContext, userText);
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
@@ -1329,9 +1363,16 @@ const withProductFields = (name: string, value: unknown, child: boolean): unknow
 };
 
 /** Cases mock a Claude caller, so the inherited fields follow the model under test. */
-const capabilities = ({ base }: Sample, value: unknown) =>
+const capabilities = ({ base, testCase }: Sample, value: unknown) =>
   isRecord(value)
     ? {
+        ...(testCase.setup.teamRoles === undefined
+          ? {}
+          : {
+              teamRoles: testCase.setup.teamRoles,
+              teamRolesSource: "project",
+              defaultTeamRoles: [],
+            }),
         ...value,
         inheritedModel: base.model,
         ...(base.codex
@@ -1684,6 +1725,71 @@ const withOptionsObject = (input: unknown) => {
   return { ...input, target: { ...input.target, options } };
 };
 
+// Calls that read a delegated child's result or wait for it.
+const READS_RESULTS = new Set([
+  "task_status",
+  "task_cancel",
+  "t3_thread_read",
+  "t3_thread_wait",
+  "t3_background_wait",
+]);
+
+/** Grades one team role fanned out to its models. `calls` carry delegate_task options as objects. */
+const gradeFanOut = (
+  fanOut: NonNullable<McpToolUseCase["expect"]["fanOut"]>,
+  calls: ReadonlyArray<Call>,
+) => {
+  const role = fanOut.role.toLowerCase();
+  const launches = calls.flatMap((call) =>
+    call.tool === "delegate_task" &&
+    call.failed !== true &&
+    isRecord(call.input) &&
+    valueText(call.input.role).toLowerCase() === role
+      ? [{ call, input: call.input }]
+      : [],
+  );
+  const canonical = (options: unknown) =>
+    JSON.stringify(
+      Object.entries(isRecord(options) ? options : {}).toSorted(([a], [b]) => a.localeCompare(b)),
+    );
+  const targetKey = (target: unknown) =>
+    isRecord(target)
+      ? `${valueText(target.providerInstanceId)} ${valueText(target.model)} ${canonical(target.options)}`
+      : "";
+  const wanted = fanOut.targets.map(targetKey).toSorted();
+  const got = launches.map(({ input }) => targetKey(input.target)).toSorted();
+  const tasks = launches.map(({ input }) =>
+    typeof input.task === "string" ? input.task.trim() : "",
+  );
+  const requestIds = launches.map(({ input }) => input.clientRequestId);
+  const lastLaunch = Math.max(-1, ...launches.map(({ call }) => calls.indexOf(call)));
+  const firstRead = calls.findIndex((call) => READS_RESULTS.has(call.tool));
+  const label = `fanOut ${fanOut.role}`;
+  return [
+    {
+      check: `${label} one child per target (${fanOut.targets.length})`,
+      pass: launches.length === fanOut.targets.length,
+    },
+    { check: `${label} targets and options`, pass: valueText(wanted) === valueText(got) },
+    {
+      check: `${label} identical task`,
+      pass: tasks.length > 0 && tasks[0] !== "" && tasks.every((task) => task === tasks[0]),
+    },
+    {
+      check: `${label} distinct clientRequestId`,
+      pass:
+        requestIds.every((id) => typeof id === "string" && id !== "") &&
+        new Set(requestIds).size === requestIds.length,
+    },
+    {
+      check: `${label} all launched before any result is read`,
+      pass:
+        launches.every(({ input }) => input.mode !== "wait") &&
+        (firstRead === -1 || lastLaunch < firstRead),
+    },
+  ];
+};
+
 /** What the user wrote in the case's thread: its context, prior user turns and the prompt. */
 export const pastedText = ({ prompt, setup }: Pick<McpToolUseCase, "prompt" | "setup">) =>
   [
@@ -1766,6 +1872,7 @@ export const gradeSample = (expect: McpToolUseCase["expect"], run: SampleRun, pa
     const exact = valueText(numbers.toSorted((a, b) => a - b));
     add("linkedNumbers", exact === valueText(expect.linkedNumbers.toSorted((a, b) => a - b)));
   }
+  if (expect.fanOut !== undefined) checks.push(...gradeFanOut(expect.fanOut, calls));
   checks.push(...gradeDevice(expect.device, run));
   checks.push(...gradeSecret(expect.secret, run, pasted));
   return checks;

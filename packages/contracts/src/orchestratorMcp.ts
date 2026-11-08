@@ -163,7 +163,7 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   role: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(64)).annotate({
       description:
-        "Role of the child: a team role name from orchestrator_capabilities teamRoles (e.g. architect, researcher, implementer, reviewer, tester) or one of implementation, research, review, design, test, general. Shown in the UI and prefixed to the brief.",
+        "Role of the child: a team role name from orchestrator_capabilities teamRoles (e.g. architect, researcher, implementer, reviewer, tester) or one of implementation, research, review, design, test, general. Shown in the UI and prefixed to the brief. A team role with several models gets one delegate_task per model, all with this role and an identical task.",
     }),
   ),
   isolation: Schema.optional(
@@ -616,7 +616,7 @@ const OrchestratorMcpTeamRolesScope = Schema.Literals(["project", "default"]);
 const OrchestratorMcpTeamRolesView = Schema.Struct({
   teamRoles: TeamRoles.annotate({
     description:
-      "The team this thread's project uses: the model for each role. When you split a task, delegate a role's part to its model.",
+      "The team this thread's project uses: the model for each role. When you split a task, delegate a role's part to its model. A role with additionalTargets runs on its own model and each additional one, one child per model.",
   }),
   teamRolesSource: OrchestratorMcpTeamRolesScope.annotate({
     description:
@@ -677,7 +677,7 @@ export const OrchestratorMcpTeamRolesSetInput = Schema.Struct({
   roles: Schema.optional(
     TeamRoles.annotate({
       description:
-        "The whole team, replacing the saved one; [] means no team. Omit it, for project only, to remove the project's own team so it follows the default team. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. description says what the role does, in a sentence.",
+        "The whole team, replacing the saved one; [] means no team. Omit it, for project only, to remove the project's own team so it follows the default team. Take providerInstanceId and model from orchestrator_capabilities, and set options only when the user picked them. A role runs on one model, or on up to three for independent perspectives: the first in providerInstanceId, model, and options, up to two more in additionalTargets. Every provider instance is checked before anything is saved. description says what the role does, in a sentence.",
     }),
   ),
 });

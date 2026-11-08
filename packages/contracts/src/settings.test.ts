@@ -21,6 +21,7 @@ import {
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  teamRoleTargets,
   withIdleCompaction,
 } from "./settings.ts";
 
@@ -455,6 +456,68 @@ describe("ServerSettings project overrides across versions", () => {
       defaultAutoPull: false,
       addedByNewerServer: { mode: "kept" },
     });
+  });
+});
+
+describe("team role targets", () => {
+  const claude = ProviderInstanceId.make("claudeAgent");
+  const codex = ProviderInstanceId.make("codex");
+  const decodeRoles = (teamRoles: unknown) => decodeServerSettings({ teamRoles }).teamRoles;
+
+  it("reads a saved single-model role unchanged and yields one target", () => {
+    const legacy = [
+      { role: "architect", providerInstanceId: claude, model: "opus" },
+      { role: "tester", providerInstanceId: codex, model: "gpt", options: [] },
+      {
+        role: "reviewer",
+        providerInstanceId: codex,
+        model: "gpt",
+        options: [{ id: "effort", value: "high" }],
+      },
+    ];
+    const roles = decodeRoles(legacy);
+    expect(encodeServerSettings(decodeServerSettings({ teamRoles: legacy })).teamRoles).toEqual(
+      legacy,
+    );
+    // Omitted options stay omitted and [] stays [], so a target keeps what the user saved.
+    expect(roles.map(teamRoleTargets)).toEqual([
+      [{ providerInstanceId: claude, model: "opus" }],
+      [{ providerInstanceId: codex, model: "gpt", options: [] }],
+      [{ providerInstanceId: codex, model: "gpt", options: [{ id: "effort", value: "high" }] }],
+    ]);
+  });
+
+  it.each([1, 2])("round-trips a reviewer with %i additional target(s)", (count) => {
+    const extras = [
+      { providerInstanceId: codex, model: "gpt", options: [{ id: "effort", value: "max" }] },
+      { providerInstanceId: claude, model: "sonnet" },
+    ].slice(0, count);
+    const reviewer = {
+      role: "reviewer",
+      providerInstanceId: claude,
+      model: "opus",
+      additionalTargets: extras,
+    };
+    const decoded = decodeServerSettings({ teamRoles: [reviewer] });
+    expect(encodeServerSettings(decoded).teamRoles).toEqual([reviewer]);
+    expect(teamRoleTargets(decoded.teamRoles[0]!)).toEqual([
+      { providerInstanceId: claude, model: "opus" },
+      ...extras,
+    ]);
+  });
+
+  it("allows a primary and at most two additional targets", () => {
+    const target = { providerInstanceId: codex, model: "gpt" };
+    expect(() =>
+      decodeRoles([
+        {
+          role: "reviewer",
+          providerInstanceId: claude,
+          model: "opus",
+          additionalTargets: [target, target, target],
+        },
+      ]),
+    ).toThrow();
   });
 });
 

@@ -68,6 +68,7 @@ import {
   isOrchestrationV2WorkActive,
   resolveProjectProviderInstanceEnabled,
   SECRET_REQUEST_UNSAVED_NOTE,
+  teamRoleTargets,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue, withLegacyUltracodeEffort } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -2423,13 +2424,20 @@ const make = Effect.gen(function* () {
         return yield* failure("invalid_request", "Each role needs its own name.");
       }
       const providers = yield* loadProviders;
-      const unknown = roles.filter(
-        (role) => !providers.some((provider) => provider.instanceId === role.providerInstanceId),
+      // Check every target before saving, so a bad second model cannot leave a half-saved team.
+      const unknown = roles.flatMap((role) =>
+        teamRoleTargets(role).flatMap((target, index) =>
+          providers.some((provider) => provider.instanceId === target.providerInstanceId)
+            ? []
+            : [
+                `${role.role} ${index === 0 ? "model" : `additional target ${index}`} (${target.providerInstanceId})`,
+              ],
+        ),
       );
       if (unknown.length > 0) {
         return yield* failure(
           "invalid_request",
-          `Unknown provider instance for ${unknown.map((role) => role.role).join(", ")}. Use a providerInstanceId from orchestrator_capabilities.`,
+          `Unknown provider instance for ${unknown.join(", ")}. Use a providerInstanceId from orchestrator_capabilities.`,
         );
       }
       const saveFailed = () => failure("orchestration_error", "Unable to save the team.");

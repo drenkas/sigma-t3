@@ -23,6 +23,26 @@ describe("teamRolesNote", () => {
       '- architect: Plans the change (providerInstanceId claudeAgent, model claude-opus-4-8, options {"effort":"max"})',
     );
     expect(note).toContain("- reviewer (providerInstanceId codex, model gpt-5.5)");
+    expect(note).not.toContain("targets");
+  });
+
+  it("lists every target of a multi-model role, keeping options only where saved", () => {
+    const note = teamRolesNote([
+      {
+        role: "reviewer",
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-4-8",
+        options: [{ id: "effort", value: "max" }],
+        additionalTargets: [
+          { providerInstanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5", options: [] },
+          { providerInstanceId: ProviderInstanceId.make("grok"), model: "grok-4.7" },
+        ],
+        description: "Checks the diff",
+      },
+    ]);
+    expect(note).toContain(
+      '- reviewer: Checks the diff (3 targets, one child each on the same task: target 1 providerInstanceId claudeAgent, model claude-opus-4-8, options {"effort":"max"}; target 2 providerInstanceId codex, model gpt-5.5; target 3 providerInstanceId grok, model grok-4.7)',
+    );
   });
 });
 
