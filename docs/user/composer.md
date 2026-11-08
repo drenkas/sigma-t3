@@ -308,6 +308,17 @@ no team or follow the default.
 To change one role, send `/role` alone and the agent asks which role to change
 and how, or name the change, for example `/role reviewer: gpt-5.5 high`.
 
+A role can use up to three models, most useful for a reviewer that gives
+independent perspectives. Say so when you set the role, for example
+`/role reviewer: opus, gpt-5.5, grok`. The agent sends every model the same
+task at once, then reports each one's findings and where they differ. If a
+model is unavailable, the agent says the coverage is incomplete instead of
+swapping in another. Reviewers read your current checkout, so the agent makes no
+changes while they run. For several models that change files, the agent is
+instructed to use a separate worktree for each from the same commit;
+your uncommitted changes are not copied there,
+and the agent tells you if a model needs them.
+
 The agent does small tasks itself, asks before splitting a medium task or one of
 unclear size, and may split a large one. To make it orchestrate a
 task, send `/orca` followed by the task, or `/orca` alone for the task you have
@@ -316,8 +327,9 @@ separate reviewer check the result, and reports back.
 
 To see orchestration at work first, set up a team with `/roles` and send
 `/orca-demo`. The agent runs a short fixed exercise through every role on its
-real model, which costs money, and asks every agent to work in chat without
-touching your project files. Open the thread's Lineage → Graph on web or desktop
+real model, one role after another (a role's models run together), which costs
+money, and asks every agent to work in chat without touching your project files.
+Open the thread's Lineage → Graph on web or desktop
 to watch the roles appear.
 
 Every new conversation starts with its project's team, and the agent can

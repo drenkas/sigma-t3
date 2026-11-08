@@ -1084,14 +1084,43 @@ export type WorktreeCleanup = typeof WorktreeCleanup.Type;
  * conversation starts with its project's team, or the default team when the
  * project has none, so the agent delegates each role's work to its model.
  */
-export const TeamRole = Schema.Struct({
-  role: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+export const TeamRoleTarget = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
   options: Schema.optionalKey(Schema.Array(ProviderOptionSelection)),
+});
+export type TeamRoleTarget = typeof TeamRoleTarget.Type;
+
+const TEAM_ROLE_MAX_ADDITIONAL_TARGETS = 2;
+
+/**
+ * The flat `providerInstanceId`, `model`, and `options` are the role's first model, so teams
+ * saved before roles could have several keep decoding as they were. `additionalTargets` adds up
+ * to two more, each run as its own child on the same task for an independent perspective.
+ */
+export const TeamRole = Schema.Struct({
+  role: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+  ...TeamRoleTarget.fields,
+  additionalTargets: Schema.optionalKey(
+    Schema.Array(TeamRoleTarget)
+      .check(Schema.isMaxLength(TEAM_ROLE_MAX_ADDITIONAL_TARGETS))
+      .annotate({
+        description:
+          "Up to two more models for this role, each run as its own child on the same task for an independent perspective. Omit for a single model. The first model stays in providerInstanceId, model, and options.",
+      }),
+  ),
   description: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
 });
 export type TeamRole = typeof TeamRole.Type;
+
+/** Every model a role runs on, first model first; `options` stays omitted when it was. */
+export function teamRoleTargets(role: TeamRole): ReadonlyArray<TeamRoleTarget> {
+  const { providerInstanceId, model, options, additionalTargets } = role;
+  return [
+    { providerInstanceId, model, ...(options === undefined ? {} : { options }) },
+    ...(additionalTargets ?? []),
+  ];
+}
 
 export const TeamRoles = Schema.Array(TeamRole).check(Schema.isMaxLength(20));
 export type TeamRoles = typeof TeamRoles.Type;

@@ -791,6 +791,135 @@ const deviceCases = () =>
     .split("\n")
     .map((line) => decodeDeviceCase(line));
 
+it("grades a team role fanned out to its models", () => {
+  const targets = [
+    { providerInstanceId: "claudeAgent", model: "claude-opus-5-5", options: { effort: "high" } },
+    { providerInstanceId: "codex", model: "gpt-6.1-sol" },
+  ];
+  const expect = { fanOut: { role: "reviewer", targets } };
+  const launch = (target: unknown, over: Record<string, unknown> = {}) => ({
+    tool: "delegate_task",
+    input: {
+      task: "Review the diff.",
+      role: "reviewer",
+      mode: "async",
+      clientRequestId: `r-${JSON.stringify(target)}`,
+      target,
+      ...over,
+    },
+  });
+  const run = (...calls: Array<{ tool: string; input: unknown; failed?: boolean }>): SampleRun => ({
+    calls: calls.map((call, step) => ({ step, ...call })),
+    text: "",
+    stopReason: "end_turn",
+  });
+  const opus = launch({ ...targets[0], options: [{ id: "effort", value: "high" }] });
+  const sol = launch({ providerInstanceId: "codex", model: "gpt-6.1-sol", options: [] });
+  assert.deepEqual(failed(expect, run(opus, sol, { tool: "task_status", input: {} })), []);
+  // One child, a swapped model, or invented options lose coverage.
+  assert.deepEqual(failed(expect, run(opus)), [
+    "fanOut reviewer one child per target (2)",
+    "fanOut reviewer targets and options",
+  ]);
+  assert.deepEqual(
+    failed(expect, run(opus, launch({ providerInstanceId: "codex", model: "gpt-6-astra" }))),
+    ["fanOut reviewer targets and options"],
+  );
+  assert.deepEqual(
+    failed(
+      expect,
+      run(opus, launch({ ...targets[1], options: [{ id: "reasoningEffort", value: "high" }] })),
+    ),
+    ["fanOut reviewer targets and options"],
+  );
+  // Briefs differ, ids repeat, a wait blocks, and reading a result between launches all fail.
+  assert.deepEqual(failed(expect, run(opus, launch(targets[1], { task: "Review it." }))), [
+    "fanOut reviewer identical task",
+  ]);
+  assert.deepEqual(
+    failed(
+      expect,
+      run(opus, { ...sol, input: { ...sol.input, clientRequestId: opus.input.clientRequestId } }),
+    ),
+    ["fanOut reviewer distinct clientRequestId"],
+  );
+  assert.deepEqual(failed(expect, run(opus, { ...sol, input: { ...sol.input, mode: "wait" } })), [
+    "fanOut reviewer all launched before any result is read",
+  ]);
+  assert.deepEqual(failed(expect, run(opus, { tool: "task_status", input: {} }, sol)), [
+    "fanOut reviewer all launched before any result is read",
+  ]);
+  // Another role's child and a failed launch are not this role's.
+  assert.deepEqual(
+    failed(
+      expect,
+      run(opus, sol, launch(targets[0], { role: "tester" }), { ...opus, failed: true }),
+    ),
+    [],
+  );
+  // One saved model is the control: exactly one child on that model.
+  const single = { fanOut: { role: "reviewer", targets: [targets[1]!] } };
+  assert.deepEqual(failed(single, run(sol)), []);
+  assert.deepEqual(failed(single, run(sol, opus)), [
+    "fanOut reviewer one child per target (1)",
+    "fanOut reviewer targets and options",
+  ]);
+});
+
+it("starts a team conversation with its note and the expanded command", () => {
+  const base = buildBase(template, { model: "claude-sonnet-5-5", keepUserInstructions: false });
+  const team = {
+    teamRoles: [
+      {
+        role: "reviewer",
+        providerInstanceId: "claudeAgent",
+        model: "claude-opus-5-5",
+        additionalTargets: [{ providerInstanceId: "codex", model: "gpt-6.1-sol" }],
+      },
+    ],
+  };
+  const testCase = decodeDeviceCase(
+    JSON.stringify({
+      id: "team-note",
+      area: "orchestration",
+      kind: "guard",
+      pattern: "team",
+      experience: "team",
+      setup: { role: "top", ...team },
+      prompt: "/orca Review this branch",
+      expect: {},
+    }),
+  );
+  const prompt = (c: McpToolUseCase) =>
+    String(buildMessages(makeSample(c, base)).at(-1)?.content.at(-1)?.text);
+  assert.include(prompt(testCase), "<t3_team_roles>");
+  assert.include(prompt(testCase), "reviewer (2 targets, one child each on the same task");
+  assert.include(prompt(testCase), "<task>\nReview this branch\n</task>");
+  // No team, no note: existing cases keep their prompt.
+  assert.equal(
+    prompt({ ...testCase, setup: { role: "top" }, prompt: "Review this branch" }),
+    "Review this branch",
+  );
+  // The note starts a conversation only, and the thread's capabilities carry the team.
+  const later = {
+    ...testCase,
+    setup: {
+      ...testCase.setup,
+      priorTurns: [
+        {
+          role: "assistant" as const,
+          toolCalls: [{ tool: "orchestrator_capabilities", input: {}, result: {} }],
+        },
+      ],
+    },
+  };
+  assert.notInclude(prompt(later), "<t3_team_roles>");
+  const replayed = buildMessages(makeSample(later, base))
+    .flatMap((message) => message.content)
+    .find((block) => block.type === "tool_result" && String(block.content).includes("teamRoles"));
+  assert.include(String(replayed?.content), '"additionalTargets"');
+});
+
 it.effect("builds device cases from product-backed worlds and synthetic prior turns", () =>
   Effect.gen(function* () {
     const cases = deviceCases();
