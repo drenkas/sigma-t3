@@ -1035,7 +1035,10 @@ export const buildMessages = (sample: Sample) => {
           : (sample.priorResults.get(prior) ?? result);
       push("user", toolResult(id, replayed));
     }
-    if (turn.text) push(turn.role, text(turn.text));
+    if (turn.text) {
+      const expanded = turn.role === "user" ? expandTeamCommand(turn.text) : null;
+      push(turn.role, text(expanded ?? turn.text));
+    }
   }
   const composerText =
     testCase.promptContext === undefined
