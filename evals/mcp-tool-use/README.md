@@ -226,16 +226,19 @@ Passes per case, main's text → the request_secret guidance change stacked on t
 
 ## Team roles cases
 
-`cases/team-roles.ndjson` covers a team role saved with up to three models (`setup.teamRoles`). The runner builds the first message as the server does: `teamRolesNote` for a top-level thread without prior turns, and `expandTeamCommand` for a `/orca` prompt, both imported from source. `orchestrator_capabilities` returns the team as `teamRoles`. `expect.fanOut` grades one role: one successful `delegate_task` per target with its saved provider, model and options (absent and empty options are the same), an identical `task`, distinct `clientRequestId`s, no `mode: "wait"`, and every launch before any `task_status`, `task_cancel`, `t3_thread_read`, `t3_thread_wait` or `t3_background_wait`. `endsTurnAfter: "delegate_task"` checks the agent follows each result's `next`.
+`cases/team-roles.ndjson` covers a team role saved with up to three models (`setup.teamRoles`) and how `/orca` runs parallel writers. The runner builds the first message as the server does: `teamRolesNote` for a top-level thread without prior turns, and `expandTeamCommand` for a `/orca` prompt or prior user turn, both imported from source. `orchestrator_capabilities` returns the team as `teamRoles`. `expect.fanOut` grades one role: one successful `delegate_task` per target with its saved provider, model and options (absent and empty options are the same), an identical `task`, distinct `clientRequestId`s, no `mode: "wait"`, and every launch before any `task_status`, `task_cancel`, `t3_thread_read`, `t3_thread_wait` or `t3_background_wait`. `endsTurnAfter: "delegate_task"` checks the agent follows each result's `next`.
 
-| Case                                  | Kind    | What it checks                                                                                                     |
-| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
-| `team-fanout-reviewer-3`              | guard   | Three reviewer models each get one child with the same brief and their own options; the implementer is left out.   |
-| `team-fanout-orca-review-2`           | guard   | `/orca` review step reaches both reviewer models; the parent edits nothing.                                        |
-| `team-single-target-control`          | control | A one-model reviewer gets exactly one child on that model and its options.                                         |
-| `team-user-model-override-wins`       | control | A model the user names runs alone, not the role's three.                                                           |
-| `team-fanout-writers-worktrees`       | guard   | Two writers each get `isolation: "worktree"` from the committed baseline; no shell worktree, commit, stash or add. |
-| `team-writers-dirty-inputs-explained` | guard   | Writers that need uncommitted edits are not started; the agent explains the constraint and commits nothing.        |
+| Case                                     | Kind    | What it checks                                                                                                        |
+| ---------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
+| `team-fanout-reviewer-3`                 | guard   | Three reviewer models each get one child with the same brief and their own options; the implementer is left out.      |
+| `team-fanout-orca-review-2`              | guard   | `/orca` review step reaches both reviewer models; the parent edits nothing.                                           |
+| `team-single-target-control`             | control | A one-model reviewer gets exactly one child on that model and its options.                                            |
+| `team-user-model-override-wins`          | control | A model the user names runs alone, not the role's three.                                                              |
+| `team-fanout-writers-worktrees`          | guard   | Two writers each get `isolation: "worktree"` from the committed baseline; no shell worktree, commit, stash or add.    |
+| `team-writers-dirty-inputs-explained`    | guard   | Writers that need uncommitted edits are not started; the agent explains the constraint and commits nothing.           |
+| `orca-parallel-writers-worktrees`        | guard   | `/orca` runs three independent units as three async worktree writers told to commit on their branches.                |
+| `orca-integrator-after-parallel-writers` | guard   | After two worktree writers finish, one integrator gets both branches; the parent merges nothing and starts no review. |
+| `orca-small-task-one-writer`             | control | A small coupled `/orca` task gets no worktree writers.                                                                |
 
 These replay the parent's decision with simulated tools; children do not run, so they do not show delivered reviews, disagreement reporting after the wake, or partial-failure handling. `/orca-demo` is covered only by unit tests of its text. The cases were added with the text and have no paid baseline yet: run them on the text before this change (the parent commit) to confirm they fail before relying on them.
 

@@ -334,7 +334,11 @@ The agent does small tasks itself, asks before splitting a medium task or one of
 unclear size, and may split a large one. To make it orchestrate a
 task, send `/orca` followed by the task, or `/orca` alone for the task you have
 been discussing. The agent plans the work, hands each part to a team role, has a
-separate reviewer check the result, and reports back.
+separate reviewer check the result, and reports back. When parts of a large task
+are independent, the agent may run several workers at once, each in its own
+worktree, then has a separate agent merge their branches into your checkout
+without committing. A small task gets one worker. Your uncommitted changes are
+not copied to those worktrees, and the workers' worktrees stay after the merge.
 
 To see orchestration at work first, set up a team with `/roles` and send
 `/orca-demo`. The agent runs a short fixed exercise through every role on its
