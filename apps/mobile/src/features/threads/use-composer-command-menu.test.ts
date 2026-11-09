@@ -86,12 +86,11 @@ describe("mobile slash commands", () => {
     ).toEqual({ text: "/plan ", cursor: 6 });
   });
 
-  it("inserts /orca-demo for the server instead of applying an interaction mode", () => {
+  it("inserts /orca-demo for the server to expand", () => {
     const items = buildComposerSlashCommandItems({
       query: "orca-d",
       atMessageStart: true,
       hasThread: true,
-      allowInteractionMode: true,
       selectedProviderStatus: { driver: ProviderDriverKind.make("codex"), slashCommands: [] },
     });
     const item = items[0];
@@ -101,9 +100,8 @@ describe("mobile slash commands", () => {
         draftMessage: "/orca-d",
         trigger: { rangeStart: 0, rangeEnd: 7 },
         item,
-        allowInteractionMode: true,
       }),
-    ).toEqual({ text: "/orca-demo ", cursor: 11, interactionMode: null });
+    ).toEqual({ text: "/orca-demo ", cursor: 11 });
   });
 
   it("offers T3's /clear in place of the provider's, only at the message start", () => {
