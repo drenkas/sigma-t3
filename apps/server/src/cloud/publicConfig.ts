@@ -106,9 +106,11 @@ export function makeRelayUrlConfig(fallback = buildTimeRelayUrl) {
 
 export const relayUrlConfig = makeRelayUrlConfig();
 
+const STABLE_HOSTED_APP_URL = "https://app.t3.codes";
+
 export const hostedAppUrlConfig = makePublicValueConfig(
   "SIGMA_T3_HOSTED_APP_URL",
-  "https://app.t3.codes",
+  STABLE_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
 const NIGHTLY_HOSTED_APP_URL = "https://nightly.app.t3.codes";
@@ -118,10 +120,10 @@ const NIGHTLY_HOSTED_APP_URL = "https://nightly.app.t3.codes";
  * nightly hosted app, which ships the same approval page; app.t3.codes serves stable.
  */
 export const agentApprovalAppUrlConfig = makePublicValueConfig(
-  "T3CODE_HOSTED_APP_URL",
+  "SIGMA_T3_HOSTED_APP_URL",
   typeof __T3CODE_BUILD_CHANNEL__ !== "undefined" && __T3CODE_BUILD_CHANNEL__ === "nightly"
     ? NIGHTLY_HOSTED_APP_URL
-    : DEFAULT_HOSTED_APP_URL,
+    : STABLE_HOSTED_APP_URL,
 ).pipe(Config.mapEffect(validateHostedAppUrl));
 
 function validateHostedAppUrl(value: string) {
