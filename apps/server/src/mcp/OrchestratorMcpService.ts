@@ -2388,7 +2388,7 @@ const make = Effect.gen(function* () {
       };
     }),
     setTeamRoles: Effect.fn("OrchestratorMcpService.setTeamRoles")(function* (scope, input) {
-      const { parent } = yield* loadCaller(scope);
+      const { parent } = yield* loadCaller(scope, []);
       const projectId = parent?.thread.projectId;
       const roles = input.roles ?? [];
       const names = roles.map((role) => role.role.toLowerCase());
