@@ -198,6 +198,7 @@ function makeHarness(options: HarnessOptions = {}) {
         ),
       getByWorkspaceRoot: () => Effect.succeedSome(project),
       findActiveByFolders: () => Effect.succeedNone,
+      workspaceScanDirectory: () => Effect.die("unused"),
       snapshot: Effect.die("unused"),
       getShell: () => Effect.die("unused"),
       listShells: () => Effect.die("unused"),
