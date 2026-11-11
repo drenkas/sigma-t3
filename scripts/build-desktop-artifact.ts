@@ -2929,7 +2929,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
-          StartupWMClass: "sigma-t3",
+          // Match Electron's WM_CLASS from setDesktopName so docks use this launcher.
+          StartupWMClass: "com.drenkas.SigmaT3",
         },
       },
     };
