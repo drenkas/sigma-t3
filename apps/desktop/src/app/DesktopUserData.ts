@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPath")(
