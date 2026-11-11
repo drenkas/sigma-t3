@@ -31,7 +31,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
-import type { ProjectConflictError } from "./ProjectService.ts";
 
 export class ProjectCloneTracker extends Context.Service<
   ProjectCloneTracker,
@@ -54,13 +53,12 @@ export class ProjectCloneTracker extends Context.Service<
 >()("t3/project/ProjectCloneTracker") {}
 
 export interface ProjectCloneHooks {
-  /** Fails with `ProjectConflictError` when another project already owns the destination. */
   readonly createProject: (input: {
     readonly projectId: ProjectId;
     readonly title: string;
     readonly workspaceRoot: string;
     readonly createdAt: string;
-  }) => Effect.Effect<void, OrchestrationDispatchCommandError | ProjectConflictError>;
+  }) => Effect.Effect<void, OrchestrationDispatchCommandError>;
   readonly onCloned: (input: {
     readonly projectId: ProjectId;
     readonly workspaceRoot: string;
@@ -268,16 +266,6 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  const moveClaim = (from: ProjectId, to: ProjectId) =>
-    Ref.modify(clones, (current) => {
-      const claim = current.get(from);
-      if (!claim || current.has(to)) return [false, current] as const;
-      const next = new Map(current);
-      next.delete(from);
-      next.set(to, { ...claim, snapshot: { ...claim.snapshot, projectId: to } });
-      return [true, next] as const;
-    });
-
   const start: ProjectCloneTracker["Service"]["start"] = Effect.fn("ProjectCloneTracker.start")(
     function* (input, hooks) {
       const prepared = yield* repositories.prepareClone(input);
@@ -318,44 +306,30 @@ export const make = Effect.gen(function* () {
         });
         return [true, next] as const;
       });
-      const alreadyInProgress = new SourceControlRepositoryError({
-        operation: "cloneRepository",
-        provider: input.provider ?? SourceControlProviderKind.make("unknown"),
-        detail: "A clone into this destination is already in progress.",
-      });
-      if (!claimed) return yield* alreadyInProgress;
+      if (!claimed) {
+        return yield* new SourceControlRepositoryError({
+          operation: "cloneRepository",
+          provider: input.provider ?? SourceControlProviderKind.make("unknown"),
+          detail: "A clone into this destination is already in progress.",
+        });
+      }
       // Finish or release the claim despite disconnects; a claim without a fiber cannot be cancelled or retried.
-      const projectId = yield* Effect.uninterruptible(
+      yield* Effect.uninterruptible(
         Effect.gen(function* () {
           yield* clearRetention(input.projectId);
           // Register before creation so racing thread.create and project.delete see the clone.
-          const projectId = yield* hooks
-            .createProject({
-              projectId: input.projectId,
-              title: input.title,
-              workspaceRoot: prepared.destinationPath,
-              createdAt: input.createdAt,
-            })
-            .pipe(
-              Effect.as(input.projectId),
-              // A failed clone's project still owns its empty folder after a restart
-              // forgets the clone; clone for that project instead.
-              Effect.catchTags({
-                ProjectConflictError: (conflict) =>
-                  moveClaim(input.projectId, conflict.conflictingProjectId).pipe(
-                    Effect.flatMap((moved) =>
-                      moved ? Effect.succeed(conflict.conflictingProjectId) : alreadyInProgress,
-                    ),
-                  ),
-              }),
-            );
+          yield* hooks.createProject({
+            projectId: input.projectId,
+            title: input.title,
+            workspaceRoot: prepared.destinationPath,
+            createdAt: input.createdAt,
+          });
           yield* publish;
-          yield* launch(projectId);
-          return projectId;
+          yield* launch(input.projectId);
         }).pipe(Effect.tapError(() => remove(input.projectId))),
       );
       return {
-        projectId,
+        projectId: input.projectId,
         cwd: prepared.destinationPath,
         remoteUrl: prepared.remoteUrl,
         repository: prepared.repository,

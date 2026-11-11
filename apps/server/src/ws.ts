@@ -2758,13 +2758,12 @@ export const layerWsRpc = (
                 })
                 .pipe(
                   Effect.asVoid,
-                  Effect.mapError((cause) =>
-                    cause._tag === "ProjectConflictError"
-                      ? cause
-                      : new OrchestrationDispatchCommandError({
-                          message: "Failed to create clone project.",
-                          cause,
-                        }),
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationDispatchCommandError({
+                        message: "Failed to create clone project.",
+                        cause,
+                      }),
                   ),
                 ),
             onCloned: (project) =>
