@@ -46,6 +46,7 @@ import {
   handoffTokenCapConfig,
   handoffBudget,
   attachmentTokenAllowance,
+  estimateTextTokens,
   contextUsageForHandoff,
   historicalMessage,
   latestNativeContextUsage,
@@ -705,9 +706,19 @@ export const layer: Layer.Layer<
           runs: current.runs,
           turnItems: current.turnItems,
         });
-      const inheritedBackgroundTurnItems = yield* projectionStore
-        .getRuntimeRecoveryProjection(projection.thread.id)
-        .pipe(Effect.map(selectInheritedBackgroundItems));
+      const recoveryResult = yield* Effect.result(
+        projectionStore.getRuntimeRecoveryProjection(projection.thread.id),
+      );
+      if (recoveryResult._tag === "Failure") {
+        if (input.willRetry === true) return yield* recoveryResult.failure;
+        yield* settleStartFailure({
+          signal: "runtime-recovery-read-failure",
+          title: "Couldn't read thread state",
+          error: recoveryResult.failure,
+        });
+        return;
+      }
+      const inheritedBackgroundTurnItems = selectInheritedBackgroundItems(recoveryResult.success);
       const providerSessionId = providerThread.providerSessionId;
       const runControls = makeRunControls({
         threadId: projection.thread.id,
@@ -1030,7 +1041,7 @@ export const layer: Layer.Layer<
                     : 0;
                 return (
                   sum +
-                  (historical === null ? 0 : Buffer.byteLength(historical.text)) +
+                  (historical === null ? 0 : estimateTextTokens(historical.text)) +
                   nativeAttachments
                 );
               }, 0)
