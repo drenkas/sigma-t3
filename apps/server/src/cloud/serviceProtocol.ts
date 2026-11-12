@@ -46,11 +46,19 @@ export const disabledServiceTask = (taskXml: string): string =>
     ? taskXml
     : taskXml.replace("  </Settings>", "    <Enabled>false</Enabled>\n  </Settings>");
 
-export function serviceUnitBaseDirOf(contents: string): string | undefined {
-  const systemd = /^Environment=SIGMA_T3_HOME=(.*)$/m.exec(contents)?.[1];
+export function serviceUnitEnvironmentValueOf(
+  contents: string,
+  name: "SIGMA_T3_HOME" | "T3CODE_INSTALL_BIN_DIR",
+): string | undefined {
+  const systemd = new RegExp(`^Environment=${name}=(.*)$`, "m").exec(contents)?.[1];
   if (systemd !== undefined) return unquoteSystemdValue(systemd.trim());
-  const plist = /<key>SIGMA_T3_HOME<\/key>\s*<string>([^<]*)<\/string>/.exec(contents)?.[1];
-  if (plist !== undefined) return unescapeXmlText(plist);
+  const plist = new RegExp(`<key>${name}</key>\\s*<string>([^<]*)</string>`).exec(contents)?.[1];
+  return plist === undefined ? undefined : unescapeXmlText(plist);
+}
+
+export function serviceUnitBaseDirOf(contents: string): string | undefined {
+  const unix = serviceUnitEnvironmentValueOf(contents, "SIGMA_T3_HOME");
+  if (unix !== undefined) return unix;
   const task = /<Arguments>[^<]* "--base-dir" "([^"]*)"/.exec(contents)?.[1];
   return task === undefined ? undefined : unquoteWindowsArgument(task);
 }
