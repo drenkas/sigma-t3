@@ -489,7 +489,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
 
       const plan = yield* service.install();
 
-      const unitPath = path.join(home, ".config", "systemd", "user", "t3code.service");
+      const unitPath = path.join(home, ".config", "systemd", "user", "sigma-t3.service");
       expect(plan.unitPath).toBe(unitPath);
       expect(yield* service.status).toMatchObject({ current: true, unitPath });
     }),
