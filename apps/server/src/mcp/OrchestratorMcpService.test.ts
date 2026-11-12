@@ -4034,7 +4034,9 @@ describe("OrchestratorMcpService thread lookup", () => {
                 Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
                   list: () => Effect.succeed([]),
                 }),
-                Layer.mock(ProjectService.ProjectService)({}),
+                Layer.mock(ProjectService.ProjectService)({
+                  getById: (id) => Effect.succeedSome({ id } as never),
+                }),
                 Layer.mock(SecretRequests.SecretRequests)({}),
                 Layer.mock(RemoteDelegation.RemoteDelegation)({}),
                 Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),

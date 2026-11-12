@@ -182,6 +182,7 @@ const boxProjects = (seen: Ref.Ref<Seen>) =>
               })
             : Option.none(),
         ),
+      findActiveByFolders: () => Effect.succeedNone,
       create: (input) =>
         Ref.update(seen, (current) => ({
           ...current,
