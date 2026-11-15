@@ -134,7 +134,7 @@ function layerPool(
           runningUnderArm64Translation: false,
         }).pipe(
           Layer.provide(
-            Layer.mergeAll(Path.layer, DesktopConfig.layerTest({ T3CODE_HOME: "/test-home" })),
+            Layer.mergeAll(Path.layer, DesktopConfig.layerTest({ SIGMA_T3_HOME: "/test-home" })),
           ),
           Layer.orDie,
         ),

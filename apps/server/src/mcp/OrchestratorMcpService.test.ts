@@ -4043,6 +4043,8 @@ describe("OrchestratorMcpService thread lookup", () => {
                 NodeCrypto.layer,
                 Layer.mock(ThreadManagementService.ThreadManagementService)({
                   listProjectThreads: () => Effect.succeed([launched, reviewer]),
+                  getShellSnapshot: () =>
+                    Effect.succeed({ threads: [launched, reviewer] } as never),
                 }),
                 ServerSettings.layerTest(),
                 Layer.mock(ProviderRegistry.ProviderRegistry)({
