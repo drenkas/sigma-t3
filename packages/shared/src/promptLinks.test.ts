@@ -153,11 +153,12 @@ describe("link round trips", () => {
   });
 
   it("maps links in browsers without URL.canParse, such as Safari before 17", () => {
+    const hosted = "https://fork.example";
     const canParse = URL.canParse;
     Reflect.deleteProperty(URL, "canParse");
     try {
-      expect(promptLinkAppPath("https://app.t3.codes/new?prompt=hi")).toBe("/new?prompt=hi");
-      expect(promptLinkAppPath("https://app.t3.codes/")).toBeNull();
+      expect(promptLinkAppPath(`${hosted}/new?prompt=hi`, hosted)).toBe("/new?prompt=hi");
+      expect(promptLinkAppPath(`${hosted}/`, hosted)).toBeNull();
       expect(promptLinkAppPath("not a url")).toBeNull();
     } finally {
       URL.canParse = canParse;
