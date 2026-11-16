@@ -240,6 +240,36 @@ const makeProjectLookupFixture = Effect.fn("ProjectCliTest.makeProjectLookupFixt
   return { baseDir, workspaceRoot, project: project! };
 });
 
+it.effect.each([
+  { label: "keeps its title", titleArgs: [], expectedTitle: undefined },
+  { label: "applies --title", titleArgs: ["--title", " Back again "], expectedTitle: "Back again" },
+])(
+  "adding an archived project's folder again unarchives it and $label",
+  ({ titleArgs, expectedTitle }) =>
+    Effect.gen(function* () {
+      const { baseDir, workspaceRoot, project } = yield* makeProjectLookupFixture();
+      yield* withProjectService(baseDir, (projects) =>
+        projects.update({
+          commandId: CommandId.make("project-cli-archive"),
+          projectId: project.id,
+          archived: true,
+        }),
+      );
+
+      yield* runCli(["project", "add", workspaceRoot, ...titleArgs, "--base-dir", baseDir]);
+
+      const projects = (yield* readProjects(baseDir)).projects;
+      assert.deepEqual(
+        projects.map((entry) => ({
+          id: entry.id,
+          title: entry.title,
+          archivedAt: entry.archivedAt,
+        })),
+        [{ id: project.id, title: expectedTitle ?? project.title, archivedAt: null }],
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
+);
+
 const makeThreadPersistenceLayer = Effect.fn("ProjectCliTest.makeThreadPersistenceLayer")(
   function* (baseDir: string) {
     const config = yield* makeConfig(baseDir);
