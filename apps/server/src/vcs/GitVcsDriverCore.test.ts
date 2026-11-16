@@ -1264,8 +1264,8 @@ describe("pullCurrentBranch", () => {
             yield* writeTextFile(cwd, ".git/refs/remotes/origin/other.lock", "");
           }
           if (failure === "diverged") {
-            yield* writeTextFile(cwd, "local.txt", "local\n");
-            yield* git(cwd, ["add", "local.txt"]);
+            yield* writeTextFile(cwd, "remote.txt", "local\n");
+            yield* git(cwd, ["add", "remote.txt"]);
             yield* git(cwd, ["commit", "-m", "local commit"]);
           }
           const blockers: string[] = [];
@@ -1370,7 +1370,7 @@ describe("pullCurrentBranch", () => {
               );
             } else {
               const error = yield* Effect.flip(driver.pullCurrentBranch(cwd));
-              assert.equal(error.operation, "GitVcsDriver.pullCurrentBranch.pull");
+              assert.equal(error.operation, "GitVcsDriver.pullCurrentBranch.rebase");
             }
             assert.equal(targetFetches, 0);
             yield* Deferred.succeed(release, undefined);
