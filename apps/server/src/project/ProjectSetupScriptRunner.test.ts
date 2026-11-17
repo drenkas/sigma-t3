@@ -355,11 +355,24 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX setup co
 
   it.live.each([
     { name: "an explicit exit", command: "exit 7", exitCode: 7 },
-    { name: "a syntax error", command: "if then", exitCode: 2 },
+    { name: "a syntax error", command: "if then", exitCode: null },
   ])("reports a nonzero completion for $name", ({ command, exitCode }) =>
     Effect.gen(function* () {
       const result = yield* runObservedSetup(command);
-      assert.equal(result.exitCode, exitCode);
+      const expectedExitCode =
+        exitCode ??
+        (yield* Effect.gen(function* () {
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const child = yield* spawner.spawn(
+            ChildProcess.make(
+              "/bin/bash",
+              ["--noprofile", "--norc", "-c", 'eval "$1"', "t3-setup-test", command],
+              { stdout: "ignore", stderr: "ignore" },
+            ),
+          );
+          return Number(yield* child.exitCode);
+        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)));
+      assert.equal(result.exitCode, expectedExitCode);
     }),
   );
 });

@@ -4192,14 +4192,15 @@ it.live("a page's title change without navigation reaches its session", () =>
     });
     realContextOverride = context;
     yield* Effect.gen(function* () {
-      yield* ServerBrowser.ServerBrowser;
+      const browser = yield* ServerBrowser.ServerBrowser;
       const manager = yield* Manager.PreviewManager;
       const events = yield* manager.subscribeEvents;
-      yield* manager.open({
+      const opened = yield* manager.open({
         threadId: testThread.threadId,
         runtime: "server",
         url: "https://fixture.test/",
       });
+      yield* browser.attachViewer(viewerInput(opened.tabId, true));
       const successes: Array<{ title: string; url: string; back: boolean; forward: boolean }> = [];
       const navigatedTo = Effect.fn(function* (title: string) {
         for (;;) {
