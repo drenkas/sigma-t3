@@ -72,7 +72,7 @@ import {
   type ParamListBase,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { msg, T, useGT, useMessages } from "gt-react-native";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -1576,9 +1576,7 @@ export function AddProjectLocalFolderScreen(props: {
           <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
           {foldersMode && folders.length > 0 ? (
             <>
-              <SectionTitle>
-                <T>Project folders</T>
-              </SectionTitle>
+              <SectionTitle>{gt("Project folders")}</SectionTitle>
               <ListSection>
                 {folders.map((folder, index) => (
                   <ListRow
