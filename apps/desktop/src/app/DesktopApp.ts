@@ -42,6 +42,8 @@ import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { msg } from "gt-i18n";
+import { m } from "../i18n/messages.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -147,7 +149,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
-      "T3 Code failed to start",
+      m(msg("Sigma T3 failed to start")),
       `Stage: ${stage}\n${message}${detail}`,
     );
   }
@@ -216,7 +218,7 @@ const startLocalBackend = Effect.gen(function* () {
       owner: Option.getOrNull(owner),
     });
     yield* (yield* ElectronDialog.ElectronDialog).showErrorBox(
-      "This Sigma T3 home is unavailable",
+      m(msg("This Sigma T3 home is unavailable")),
       DesktopHomeOwner.homeOwnedMessage(owner),
     );
     yield* (yield* ElectronApp.ElectronApp).quit;
@@ -296,7 +298,7 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
       Effect.flatMap((found) =>
         found || environment.platform === "win32"
           ? installCli
-          : logBootstrapInfo("skipped installing the t3 command without the shell PATH"),
+          : logBootstrapInfo("skipped installing the sigma-t3 command without the shell PATH"),
       ),
     ),
   );

@@ -161,7 +161,10 @@ export type OrchestratorMcpTerminalDelegatedTaskStatus =
 
 export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   task: OrchestratorMcpPrompt,
-  target: Schema.optional(OrchestratorMcpTarget),
+  // Some providers send the whole target object as JSON text.
+  target: Schema.optional(
+    Schema.Union([OrchestratorMcpTarget, Schema.fromJsonString(OrchestratorMcpTarget)]),
+  ),
   title: Schema.optional(OrchestratorMcpTitle),
   role: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(64)).annotate({

@@ -309,6 +309,11 @@ describe("question answer paths", () => {
     ["hyphen symbol fallback", String.raw`{\rtf1\ansi\uc3\u945\~\_\-Z}`, "αZ"],
     ["control word", String.raw`{\rtf1\ansi A\u9\tab X}`, "A\tX"],
     ["line break paragraphs", "{\\rtf1\\ansi First\\\nSecond\\\r\nThird}", "First\nSecond\nThird"],
+    [
+      "document breaks",
+      String.raw`{\rtf1\ansi\sectd\cols2\pard North quota: 120\column South quota: 240\page East quota: 360\sect\sectd\pard West quota: 480\par}`,
+      "North quota: 120\nSouth quota: 240\nEast quota: 360\nWest quota: 480",
+    ],
     ["group close", String.raw`{\rtf1\ansi{\u945}Z}`, "αZ"],
     ["group open", String.raw`{\rtf1\ansi\u945{Z}}`, "αZ"],
     ["hex byte", String.raw`{\rtf1\ansi\u945\'3fZ}`, "αZ"],
@@ -749,10 +754,18 @@ describe("question answer paths", () => {
           ext: "docx",
           bounded: true,
           parts: {
-            "word/document.xml":
-              '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>First</w:t><w:cr/><w:t>Second</w:t><w:br/><w:t>Third</w:t><w:noBreakHyphen/><w:t>party</w:t><mc:AlternateContent xmlns:mc="urn:mc"><mc:Choice Requires="w"><w:noBreakHyphen/></mc:Choice><mc:Fallback><w:t>‑</w:t></mc:Fallback></mc:AlternateContent><w:t>End</w:t></w:r></w:p></w:body></w:document>',
+            "word/document.xml": [
+              '<w:document xmlns:w="urn:w" xmlns:mc="urn:mc"><w:body>',
+              '<w:p><w:r><w:t>First</w:t><w:cr/><w:t>Second</w:t><w:br/><w:t>Third</w:t><w:noBreakHyphen/><w:t>party</w:t><mc:AlternateContent><mc:Choice Requires="w"><w:noBreakHyphen/></mc:Choice><mc:Fallback><w:t>‑</w:t></mc:Fallback></mc:AlternateContent><w:t>End</w:t></w:r></w:p>',
+              '<w:p><w:r><w:t>Invoice 104</w:t><w:ptab w:alignment="right" w:relativeTo="margin" w:leader="none"/><w:t>$700.00</w:t></w:r></w:p>',
+              '<w:p><w:r><w:t>Invoice 105</w:t><mc:AlternateContent><mc:Choice Requires="w"><w:ptab w:alignment="right" w:relativeTo="margin" w:leader="none"/></mc:Choice><mc:Fallback><w:tab/></mc:Fallback></mc:AlternateContent><w:t>$800.00</w:t></w:r></w:p>',
+              '<w:p><w:r><w:t>Invoice 106</w:t><mc:AlternateContent><mc:Choice Requires="w"><w:ptab w:alignment="right" w:relativeTo="margin" w:leader="none"/></mc:Choice><mc:Fallback><w:t xml:space="preserve"> total </w:t></mc:Fallback></mc:AlternateContent><w:t>$900.00</w:t></w:r></w:p>',
+              "</w:body></w:document>",
+            ].join(""),
           },
-          expected: ["First\nSecond\nThird\u2011party\u2011End"],
+          expected: [
+            "First\nSecond\nThird\u2011party\u2011End\nInvoice 104\t$700.00\nInvoice 105\t$800.00\nInvoice 106 total $900.00",
+          ],
         },
         {
           ext: "docx",

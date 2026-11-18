@@ -10,6 +10,8 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 
 import type { EnvironmentProject } from "./models.ts";
 import { normalizeProjectPathForComparison } from "./projects.ts";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 const SCRATCH_PROJECT_SCOPE_KEY = "\0no-project";
 
@@ -309,12 +311,15 @@ export function pickableProjectGroups<
   return [...open.filter((group) => group.pinned), ...open.filter((group) => !group.pinned)];
 }
 
-export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
-  readonly projects: ReadonlyArray<TProject>;
-  readonly settings: ProjectGroupingSettings;
-  readonly preferredEnvironmentId?: EnvironmentId | null;
-  readonly groupScratchProjects?: boolean;
-}): ReadonlyArray<ProjectGroup<TProject>> {
+export function buildProjectGroups<TProject extends EnvironmentProject>(
+  input: {
+    readonly projects: ReadonlyArray<TProject>;
+    readonly settings: ProjectGroupingSettings;
+    readonly preferredEnvironmentId?: EnvironmentId | null;
+    readonly groupScratchProjects?: boolean;
+  },
+  resolve: MFunctionType = mFallback,
+): ReadonlyArray<ProjectGroup<TProject>> {
   const oldestByBaseKey = indexOldestProjectByBaseKey(input.projects);
   const groupedMembers = new Map<string, ProjectGroupMember<TProject>[]>();
   const projectRefsByLogicalKey = new Map<string, ScopedProjectRef[]>();
@@ -358,7 +363,7 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
       key,
       label:
         input.groupScratchProjects && representative.isScratch
-          ? "No project"
+          ? resolve(msg("No project"))
           : members.length > 1
             ? deriveProjectGroupLabel({
                 groupKey: key,
