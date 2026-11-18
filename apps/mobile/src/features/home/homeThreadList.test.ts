@@ -118,7 +118,7 @@ describe("home project scopes", () => {
     ).toEqual([threads[1]!.id]);
   });
 
-  it("keeps repository identity from an older duplicate when the freshness winner lacks it", () => {
+  it("selects same-folder projects independently when one has no repository identity", () => {
     const localEnvironmentId = EnvironmentId.make("environment-local");
     const remoteEnvironmentId = EnvironmentId.make("environment-remote");
     const repositoryIdentity = {
@@ -159,12 +159,27 @@ describe("home project scopes", () => {
       projectGroupingMode: "repository",
     });
 
-    expect(scopes).toHaveLength(1);
-    expect(scopes[0]?.representative.id).toBe(ProjectId.make("project-local"));
-    expect(scopes[0]?.projects.map((project) => project.id)).toContain(
-      ProjectId.make("project-remote-fresh"),
+    expect(scopes).toHaveLength(3);
+    const selected = findHomeProjectScope(scopes, "environment-remote:project-remote-fresh");
+    expect(selected?.projectRefs).toEqual([
+      { environmentId: remoteEnvironmentId, projectId: ProjectId.make("project-remote-fresh") },
+    ]);
+    const threads = projects.map((project) =>
+      makeThread({
+        environmentId: project.environmentId,
+        projectId: project.id,
+        id: ThreadId.make(`thread-${project.id}`),
+        title: project.id,
+      }),
     );
-    expect(scopes[0]?.projectRefs).toHaveLength(3);
+    const filtered = buildThreadListV2Items({
+      threads,
+      environmentId: null,
+      projectRefs: selected!.projectRefs,
+      searchQuery: "",
+      now: "2026-06-02T00:00:00.000Z",
+    });
+    expect(filtered.items.map((item) => item.thread.id)).toEqual([threads[2]!.id]);
   });
 
   it("does not merge unrelated repositories that share a title", () => {
