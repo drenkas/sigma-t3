@@ -6,6 +6,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, type Project, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -553,6 +554,83 @@ it.layer(layerTest)("ProjectService", (it) => {
             additionalWorkspaceRoots: ["/work/elsewhere"],
           }),
         ),
+      );
+    }),
+  );
+
+  it.effect("refuses a WSL share path on Windows and allows it elsewhere", () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const onWindows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(Effect.provideService(HostProcess.Platform, "win32"));
+      const projectId = ProjectId.make("project:wsl-share");
+      const refused = yield* onWindows(
+        service.create({
+          commandId: CommandId.make("command:wsl-share"),
+          projectId,
+          title: "WSL",
+          workspaceRoot: "\\\\wsl$\\Ubuntu\\home\\ubuntu\\repo",
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(refused._tag, "ProjectInvalidError");
+      assert.isTrue(Option.isNone(yield* service.getById(projectId)));
+
+      const mover = ProjectId.make("project:wsl-share:mover");
+      yield* onWindows(
+        service.create({
+          commandId: CommandId.make("command:wsl-share:mover"),
+          projectId: mover,
+          title: "Mover",
+          workspaceRoot: "C:\\work\\wsl-share-mover",
+        }),
+      );
+      const move = yield* onWindows(
+        service.update({
+          commandId: CommandId.make("command:wsl-share:move"),
+          projectId: mover,
+          workspaceRoot: "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\repo",
+        }),
+      ).pipe(Effect.flip);
+      assert.equal(move._tag, "ProjectInvalidError");
+
+      const linux = yield* service
+        .create({
+          commandId: CommandId.make("command:wsl-share:linux"),
+          projectId: ProjectId.make("project:wsl-share:linux"),
+          title: "Linux",
+          workspaceRoot: "\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\repo",
+        })
+        .pipe(Effect.provideService(HostProcess.Platform, "linux"));
+      assert.equal(linux.title, "Linux");
+    }),
+  );
+
+  it.effect("replays a workspace conflict after the workspace frees up", () =>
+    Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const holderId = ProjectId.make("project:freed:holder");
+      yield* service.create({
+        commandId: CommandId.make("command:freed:holder"),
+        projectId: holderId,
+        title: "Holder",
+        workspaceRoot: "/work/freed",
+      });
+      const claim = {
+        commandId: CommandId.make("command:freed:claim"),
+        projectId: ProjectId.make("project:freed:claim"),
+        title: "Claim",
+        workspaceRoot: "/work/freed",
+      };
+      const first = yield* service.create(claim).pipe(Effect.flip);
+      yield* service.delete({
+        commandId: CommandId.make("command:freed:delete"),
+        projectId: holderId,
+      });
+      const replayed = yield* service.create(claim).pipe(Effect.flip);
+      assert.deepEqual(replayed, first);
+      assert.instanceOf(replayed, ProjectService.ProjectConflictError);
+      assert.isTrue(
+        Option.isNone(yield* service.getById(claim.projectId, { includeDeleted: true })),
       );
     }),
   );
