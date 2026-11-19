@@ -384,10 +384,9 @@ describe("ssh tunnel scripts", () => {
   );
 
   // sha256sum and shasum escape a newline in a file name they print, so the home path has one.
-  const checksumTools =
-    NodeChildProcess.spawnSync("sh", ["-c", 'command -v "$1"', "sh", "shasum"]).status === 0
-      ? ["sha256sum", "shasum"]
-      : ["sha256sum"];
+  const checksumTools = ["sha256sum", "shasum"].filter(
+    (tool) => NodeChildProcess.spawnSync("sh", ["-c", 'command -v "$1"', "sh", tool]).status === 0,
+  );
   it.each(checksumTools)("names missing gzip after verifying with %s", (checksum) => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ssh-runner-"));
     try {
@@ -402,9 +401,14 @@ describe("ssh tunnel scripts", () => {
         mode: 0o755,
       });
       NodeChildProcess.execFileSync("tar", ["-czf", archive, "t3"], { cwd: release });
-      NodeChildProcess.execFileSync("sh", ["-c", `sha256sum ${archive} > SHA256SUMS`], {
-        cwd: release,
-      });
+      NodeFS.writeFileSync(
+        NodePath.join(release, "SHA256SUMS"),
+        NodeChildProcess.execFileSync(
+          checksum,
+          checksum === "shasum" ? ["-a", "256", archive] : [archive],
+          { cwd: release },
+        ),
+      );
       for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "grep", "cut", checksum, "mv"]) {
         NodeFS.symlinkSync(
           NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {

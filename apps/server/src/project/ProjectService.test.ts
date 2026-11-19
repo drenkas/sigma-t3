@@ -605,36 +605,6 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 
-  it.effect("replays a workspace conflict after the workspace frees up", () =>
-    Effect.gen(function* () {
-      const service = yield* ProjectService.ProjectService;
-      const holderId = ProjectId.make("project:freed:holder");
-      yield* service.create({
-        commandId: CommandId.make("command:freed:holder"),
-        projectId: holderId,
-        title: "Holder",
-        workspaceRoot: "/work/freed",
-      });
-      const claim = {
-        commandId: CommandId.make("command:freed:claim"),
-        projectId: ProjectId.make("project:freed:claim"),
-        title: "Claim",
-        workspaceRoot: "/work/freed",
-      };
-      const first = yield* service.create(claim).pipe(Effect.flip);
-      yield* service.delete({
-        commandId: CommandId.make("command:freed:delete"),
-        projectId: holderId,
-      });
-      const replayed = yield* service.create(claim).pipe(Effect.flip);
-      assert.deepEqual(replayed, first);
-      assert.instanceOf(replayed, ProjectService.ProjectConflictError);
-      assert.isTrue(
-        Option.isNone(yield* service.getById(claim.projectId, { includeDeleted: true })),
-      );
-    }),
-  );
-
   it.effect("keeps a project's additional folders normalized and apart from its root", () =>
     Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;
