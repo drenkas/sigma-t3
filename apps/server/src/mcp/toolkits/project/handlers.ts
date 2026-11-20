@@ -526,6 +526,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
           };
         }
+        if (input.defaultModelSelection !== undefined && input.defaultModelSelection !== null)
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message:
+              "Creating a project does not set its default model; set defaultModelSelection afterwards with t3_project_update.",
+          });
         if (allowDuplicate !== true) {
           const duplicate = yield* projects
             .findActiveByFolders({
@@ -541,12 +547,6 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               message: `Project "${duplicate.value.title}" (${duplicate.value.id}) already has these folders. Use it, or pass allowDuplicate: true to create another.`,
             });
         }
-        if (input.defaultModelSelection !== undefined && input.defaultModelSelection !== null)
-          return yield* new OrchestratorMcpFailure({
-            code: "invalid_request",
-            message:
-              "Creating a project does not set its default model; set defaultModelSelection afterwards with t3_project_update.",
-          });
         const commandId = yield* newCommandId();
         return yield* projects
           .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
