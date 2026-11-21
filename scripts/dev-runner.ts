@@ -329,7 +329,11 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
       `http://${isDesktopMode ? DESKTOP_DEV_LOOPBACK_HOST : "localhost"}:${webPort}`,
   };
 
-  if (configuredBaseDir !== undefined) {
+  const path = yield* Path.Path;
+  // The server stores an explicit home's state in userdata, which for ~/.sigma-t3 is the live
+  // install. Left implicit, dev state goes to ~/.sigma-t3/dev.
+  const isLiveHome = resolvedBaseDir === path.join(yield* HostProcess.HomeDirectory, ".sigma-t3");
+  if (configuredBaseDir !== undefined && !isLiveHome) {
     output.SIGMA_T3_HOME = resolvedBaseDir;
   } else {
     delete output.SIGMA_T3_HOME;
