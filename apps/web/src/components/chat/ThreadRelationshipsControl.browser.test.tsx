@@ -43,7 +43,6 @@ vi.mock(import("../../state/entities"), () => ({
 }));
 vi.mock(import("../../state/environments"), () => ({
   // The click rule reads the client setting, whose module asks for these.
-  useEnvironments: (() => []) as never,
   usePrimaryEnvironment: (() => null) as never,
   useEnvironment: (() => null) as never,
   useEnvironmentProviders: (() => new Map()) as never,

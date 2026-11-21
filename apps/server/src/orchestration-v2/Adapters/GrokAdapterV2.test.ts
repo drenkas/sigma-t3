@@ -350,7 +350,7 @@ describe("Grok launch permission mode", () => {
             ),
             Layer.provide(
               Layer.mock(ProjectStore.ProjectStoreV2)({
-                get: () => Effect.die("the thread has a worktree"),
+                get: () => Effect.succeedNone,
               }),
             ),
             Layer.provide(
