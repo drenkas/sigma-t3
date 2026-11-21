@@ -56,6 +56,7 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ProjectDescriptionSettings } from "./ProjectDescriptionSettings";
 import { ProjectFoldersSettings } from "./ProjectFoldersSettings";
+import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
 import {
   defaultProjectIcon,
   hasDefaultProjectIcon,
@@ -702,6 +703,7 @@ function ProjectDetail({
           canEdit={(environmentId) => editableIds.has(environmentId)}
         />
         <ProjectActionsSettings />
+        <ProjectRepositoriesSettings members={group.memberProjects} />
         {checkoutChoices}
         <SettingsSection title={gt("Danger")}>
           <SettingsRow
