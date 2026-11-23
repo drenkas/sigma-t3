@@ -134,7 +134,7 @@ export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   if (!telemetryConfig.enabled) {
     return AnalyticsService.of({
-      record: Effect.fn("AnalyticsService.record")(() => Effect.void),
+      record: Effect.fn("AnalyticsService.record")(() => Effect.succeed(false)),
       flush: Effect.void,
       recordOwners: Effect.fn("AnalyticsService.recordOwners")(() => Effect.void),
     });

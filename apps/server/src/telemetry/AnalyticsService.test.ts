@@ -426,7 +426,7 @@ it.layer(
       const config = yield* ServerConfig.ServerConfig;
       yield* Effect.gen(function* () {
         const analytics = yield* AnalyticsService.make;
-        yield* analytics.record("disabled");
+        assert.isFalse(yield* analytics.record("disabled"));
         yield* analytics.recordOwners([{ source: "connect", ownerId: "owner" }], "server");
         yield* analytics.flush;
       }).pipe(

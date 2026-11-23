@@ -6,6 +6,7 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 import { ContextHandoffBudgetError } from "@t3tools/provider-core/server/failure";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { expandTeamCommand } from "./TeamRoles.ts";
 import {
   historyCost,
   renderHistory,
@@ -19,7 +20,10 @@ const SLASH_COMMAND = /^\s*\/[^\s/]+(?:\s|$)/u;
 export const isSlashCommandMessage = (message: {
   readonly role: string;
   readonly text: string;
-}): boolean => message.role === "user" && SLASH_COMMAND.test(message.text);
+}): boolean =>
+  message.role === "user" &&
+  SLASH_COMMAND.test(message.text) &&
+  expandTeamCommand(message.text) === null;
 
 /** The provider prompt for a turn that carries inline context ahead of the user's text. */
 export const withInlineContext = (context: string, userText: string): string =>

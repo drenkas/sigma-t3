@@ -16,6 +16,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { expandTeamCommand } from "./TeamRoles.ts";
+
+export function isProviderSlashCommand(message: Parameters<typeof isSlashCommand>[0]): boolean {
+  return isSlashCommand(message) && expandTeamCommand(message.text) === null;
+}
 
 export const SteeringExecutionPolicyV2 = Schema.Literals(["active_steering", "interrupt_restart"]);
 export type SteeringExecutionPolicyV2 = typeof SteeringExecutionPolicyV2.Type;
@@ -115,7 +120,7 @@ export function resolveMessageDispatch(
     message.deliveryIntent,
   );
   // A provider runs a steered command in place of the turn's task, so commands wait.
-  return mode.type === "steer_active" && isSlashCommand(message)
+  return mode.type === "steer_active" && isProviderSlashCommand(message)
     ? { type: "queue_after_active" }
     : mode;
 }
