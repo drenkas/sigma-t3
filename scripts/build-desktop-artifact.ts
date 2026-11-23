@@ -1368,6 +1368,8 @@ const MAC_RUNTIME_ENTITLEMENTS = `    <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
     <key>com.apple.security.device.camera</key>
     <true/>
     <key>com.apple.security.device.audio-input</key>
@@ -2894,6 +2896,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "Sigma T3 lets commands run by terminals and coding agents use the camera.",
         NSMicrophoneUsageDescription:
           "Sigma T3 lets commands run by terminals and coding agents use the microphone.",
+        NSAppleEventsUsageDescription:
+          "Sigma T3 lets commands run by terminals and coding agents control other apps.",
         NSSpeechRecognitionUsageDescription:
           "Sigma T3 transcribes your dictation on this Mac when you choose Apple Speech.",
         // macOS lists an app under Default web browser only when it opens web
