@@ -10,6 +10,7 @@ export interface AcpRuntimePolicy {
   readonly additionalDirectories?: ReadonlyArray<string>;
   readonly approvalPolicy?: unknown;
   readonly sandboxPolicy?: unknown;
+  readonly workspace?: { readonly extraRoots: ReadonlyArray<string> } | undefined;
 }
 
 export type AcpPermissionDisposition = "allow" | "ask" | "deny";
@@ -115,6 +116,7 @@ function acpWorkspaceWriteAllowsMutation(
   const writableRoots = [
     ...(Array.isArray(sandboxPolicy.writableRoots) ? sandboxPolicy.writableRoots : []),
     ...(runtimePolicy.additionalDirectories ?? []),
+    ...(runtimePolicy.workspace?.extraRoots ?? []),
   ];
   for (const writableRoot of writableRoots) {
     if (typeof writableRoot !== "string") continue;

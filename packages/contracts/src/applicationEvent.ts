@@ -18,6 +18,7 @@ import {
   ProjectAdditionalWorkspaceRoots,
   ProjectDescription,
   ProjectScript,
+  ProjectTrackedFolders,
   StoredProjectIcon,
 } from "./project.ts";
 
@@ -50,6 +51,7 @@ export const ApplicationProjectCreatedPayload = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.Array(ProjectScript),
+  trackedFolders: Schema.optional(ProjectTrackedFolders),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -69,6 +71,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  trackedFolders: Schema.optional(ProjectTrackedFolders),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   updatedAt: IsoDateTime,
