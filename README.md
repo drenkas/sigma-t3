@@ -218,10 +218,10 @@ The official T3 Code mobile app ([iOS](https://apps.apple.com/us/app/t3-code-rem
 - **Sigma T3:** [fork identity and local packaging](./docs/operations/sigma-fork.md) · [upstream sync](./docs/operations/sigma-upstream-sync.md) · [agent team, `/roles` and `/orca`](./docs/user/composer.md#agent-team) · [projects with several folders](./docs/user/project-settings.md#projects-with-several-folders)
 - **From T3 Code:** [FAQ](./docs/user/faq.md) · [voice input](./docs/user/voice-input.md) · [install and first run](./docs/user/install.md) · [permission modes](./docs/user/permission-modes.md) · [keyboard shortcuts](./docs/user/keybindings.md) · [project settings](./docs/user/project-settings.md) · [appearance](./docs/user/appearance.md) · [outside agents over MCP](./docs/user/outside-agents.md) · [source control](./docs/user/source-control.md) · [background service](./docs/user/background-service.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- **Building from source:** [architecture overview](./docs/internals/overview.md)
+- **Building from source:** [architecture overview](./docs/internals/01_architecture.md)
 
 ## Credits
 
 Sigma T3 stands on [T3 Code](https://github.com/pingdotgg/t3code) by [T3 Tools](https://t3.codes) and its contributors, and every bit of their work reaches this fork through the daily sync. Please don't report problems with Sigma's own features to the T3 Code maintainers.
 
-Released under the [MIT License](./LICENSE).
+The source code is released under the [MIT License](./LICENSE). Sigma T3 is an unofficial fork, not affiliated with or endorsed by T3 Tools, Inc. Upstream trademarks and branding are excluded from the MIT license; see [TRADEMARK.md](./TRADEMARK.md).

@@ -22,6 +22,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import { serviceLauncherLockPath } from "../serviceLauncher.ts";
 import * as BootService from "./bootService.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
+import { RESTORE_OOMD_WATCH_SCRIPT } from "./userManagerOom.ts";
 import {
   decodeServiceUnit,
   disabledServiceTask,
@@ -51,6 +52,8 @@ vi.mock("node:fs", async (importOriginal) => {
     },
   };
 });
+
+const SCHTASKS = "D:\\WinNT\\System32\\schtasks.exe";
 
 const windowsTaskOptions = {
   userId: "PC\\theo",
@@ -106,7 +109,7 @@ it("protects the server unit from agents under CPU and memory pressure", () => {
     program: ["/home/theo/.t3/runtime/versions/1.2.3/t3", "__service-launcher"],
     baseDir: "/home/theo/.t3",
     logPath: "/home/theo/.t3/userdata/logs/boot-service.log",
-    unitPath: "/home/theo/.config/systemd/user/t3code.service",
+    unitPath: "/home/theo/.config/systemd/user/sigma-t3.service",
   });
   const service = unit.slice(unit.indexOf("[Service]"), unit.indexOf("[Install]"));
   for (const line of [
@@ -156,7 +159,7 @@ it.each([
       program: [`${baseDir}/runtime/versions/1.2.3/t3`, "__service-launcher"],
       baseDir,
       logPath: `${baseDir}/userdata/logs/boot-service.log`,
-      unitPath: "/home/theo/.config/systemd/user/t3code.service",
+      unitPath: "/home/theo/.config/systemd/user/sigma-t3.service",
     });
   } catch {
     return;
@@ -250,13 +253,13 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         command === "systemctl --user disable --now sigma-t3.service" ||
         command === "systemctl --user restart --no-block sigma-t3.service" ||
         command.startsWith("launchctl bootout --wait ") ||
-        (input.command === "schtasks" && input.args[0] === "/End")
+        (input.command === SCHTASKS && input.args[0] === "/End")
       ) {
         markersAtStop.push(yield* fs.exists(marker));
       }
       if (
         command === "systemctl --user daemon-reload" ||
-        (input.command === "schtasks" && input.args[0] === "/Create")
+        (input.command === SCHTASKS && input.args[0] === "/Create")
       ) {
         markersAtPreparation.push(yield* fs.exists(marker));
       }
@@ -276,8 +279,8 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       }
       if (!failed && command === "systemctl --user enable sigma-t3.service") control.enabled = true;
       const taskMissing =
-        input.command === "schtasks" && input.args[0] !== "/Create" && control.task === undefined;
-      if (input.command === "schtasks" && !failed) {
+        input.command === SCHTASKS && input.args[0] !== "/Create" && control.task === undefined;
+      if (input.command === SCHTASKS && !failed) {
         if (input.args[0] === "/Create") {
           const xml = decodeServiceUnit(yield* fs.readFile(input.args[2] ?? ""));
           control.task = { xml, enabled: !serviceTaskIsDisabled(xml) };
@@ -318,7 +321,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
               })
             : input.args[0] === "--version"
               ? `t3 v${/versions[\\/]([^\\/]+)[\\/]/.exec(input.command)?.[1] ?? "1.2.3"}\n`
-              : input.command === "schtasks" && input.args.includes("/XML")
+              : input.command === SCHTASKS && input.args.includes("/XML")
                 ? control.task?.enabled === false
                   ? disabledServiceTask(control.task.xml)
                   : (control.task?.xml ?? "")
@@ -397,6 +400,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                 USERPROFILE: home,
                 LOCALAPPDATA: path.join(home, "AppData", "Local"),
                 USERDOMAIN: "PC",
+                windir: "D:\\WinNT",
                 USERNAME: "theo",
                 ...(environmentPath === undefined || environmentPath === ""
                   ? {}
@@ -1308,6 +1312,28 @@ process.disconnect();
     }),
   );
 
+  it.effect("treats a symlinked T3 home path as the same home", () =>
+    Effect.gen(function* () {
+      const { service, fs, baseDir, commands, makeService } = yield* makeHarness();
+      yield* service.install();
+      const path = yield* Path.Path;
+      const linkDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-symlink-home-" });
+      const aliasDir = path.join(linkDir, "a$$b");
+      yield* fs.symlink(baseDir, aliasDir);
+
+      const alias = yield* makeService(undefined, "1.2.3", aliasDir);
+      expect(yield* alias.status).toMatchObject({ current: true });
+      expect((yield* alias.status).otherBaseDir).toBeUndefined();
+      expect(yield* alias.restart).toBe("restarted");
+      commands.length = 0;
+      yield* alias.withStopped(Effect.void);
+      expect(commands).toContain("systemctl --user stop sigma-t3.service");
+      expect((yield* alias.install()).baseDir).toBe(aliasDir);
+      expect(yield* service.status).toMatchObject({ current: true });
+      expect((yield* service.status).otherBaseDir).toBeUndefined();
+    }),
+  );
+
   it.effect("hands the whole install to systemd without changing the running service", () =>
     Effect.gen(function* () {
       const { fs, commands, invocations, control, makeService } = yield* makeHarness();
@@ -1407,6 +1433,7 @@ process.disconnect();
         const outcome = yield* inside.restart;
         expect(commands).toEqual([
           "systemctl --user daemon-reload",
+          `/bin/sh -c ${RESTORE_OOMD_WATCH_SCRIPT}`,
           "systemctl --user enable sigma-t3.service",
           "systemctl --user reset-failed sigma-t3.service",
           "systemctl --user restart --no-block sigma-t3.service",
@@ -1558,9 +1585,9 @@ process.disconnect();
         protocol: SERVICE_LAUNCHER_PROTOCOL,
         activeVersion: "1.2.3",
       });
-      expect(commands.filter((command) => command.startsWith("schtasks "))).toEqual([
-        `schtasks /Create /XML ${plan.unitPath} /TN sigma-t3-PC-theo /F`,
-        "schtasks /Run /TN sigma-t3-PC-theo",
+      expect(commands.filter((command) => command.startsWith(`${SCHTASKS} `))).toEqual([
+        `${SCHTASKS} /Create /XML ${plan.unitPath} /TN sigma-t3-PC-theo /F`,
+        `${SCHTASKS} /Run /TN sigma-t3-PC-theo`,
       ]);
       // No launcher holds the lock here.
       expect(yield* service.status).toMatchObject({
@@ -1570,7 +1597,7 @@ process.disconnect();
       });
 
       // A task that Task Scheduler refuses to delete stays installed, so a retry finds it.
-      control.failCommand = "schtasks /Delete /TN sigma-t3-PC-theo /F";
+      control.failCommand = `${SCHTASKS} /Delete /TN sigma-t3-PC-theo /F`;
       expect((yield* service.uninstall.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
       expect((yield* service.status).installed).toBe(true);
       control.failCommand = undefined;
@@ -1578,9 +1605,9 @@ process.disconnect();
       commands.length = 0;
       expect(yield* service.uninstall).toBe(true);
       expect(commands).toEqual([
-        "schtasks /Change /TN sigma-t3-PC-theo /DISABLE",
-        "schtasks /End /TN sigma-t3-PC-theo",
-        "schtasks /Delete /TN sigma-t3-PC-theo /F",
+        `${SCHTASKS} /Change /TN sigma-t3-PC-theo /DISABLE`,
+        `${SCHTASKS} /End /TN sigma-t3-PC-theo`,
+        `${SCHTASKS} /Delete /TN sigma-t3-PC-theo /F`,
       ]);
       expect(control.task).toBeUndefined();
       expect((yield* service.status).installed).toBe(false);
@@ -1620,11 +1647,11 @@ process.disconnect();
       commands.length = 0;
       yield* service.withStopped(Effect.sync(() => commands.push("repair")));
       expect(commands.filter((command) => !command.includes("/Query"))).toEqual([
-        "schtasks /Change /TN sigma-t3-PC-theo /DISABLE",
-        "schtasks /End /TN sigma-t3-PC-theo",
+        `${SCHTASKS} /Change /TN sigma-t3-PC-theo /DISABLE`,
+        `${SCHTASKS} /End /TN sigma-t3-PC-theo`,
         "repair",
-        "schtasks /Change /TN sigma-t3-PC-theo /ENABLE",
-        "schtasks /Run /TN sigma-t3-PC-theo",
+        `${SCHTASKS} /Change /TN sigma-t3-PC-theo /ENABLE`,
+        `${SCHTASKS} /Run /TN sigma-t3-PC-theo`,
       ]);
     }),
   );
@@ -1645,14 +1672,14 @@ process.disconnect();
       const inside = yield* makeService(undefined, "1.2.4", undefined, true);
       const relayMarker = `${plan.baseDir}/runtime/${DESKTOP_UPDATE_RESTART_MARKER_FILE}`;
       const handoff = [
-        `schtasks /Create /XML ${plan.unitPath} /TN sigma-t3-PC-theo /F`,
-        "schtasks /End /TN sigma-t3-PC-theo",
-        "schtasks /Run /TN sigma-t3-PC-theo",
+        `${SCHTASKS} /Create /XML ${plan.unitPath} /TN sigma-t3-PC-theo /F`,
+        `${SCHTASKS} /End /TN sigma-t3-PC-theo`,
+        `${SCHTASKS} /Run /TN sigma-t3-PC-theo`,
       ];
       commands.length = 0;
 
       expect(yield* inside.install()).toMatchObject({ handedOff: true, logPath: plan.logPath });
-      expect(commands.filter((command) => command.startsWith("schtasks "))).toEqual(handoff);
+      expect(commands.filter((command) => command.startsWith(`${SCHTASKS} `))).toEqual(handoff);
       expect(parseServiceState(yield* fs.readFileString(statePath))?.activeVersion).toBe("1.2.4");
       expect(
         yield* fs.readFileString(`${plan.baseDir}/runtime/${SERVICE_RESTART_PENDING_FILE}`),
